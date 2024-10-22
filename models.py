@@ -30,6 +30,9 @@ class EncDec(nn.Module):
         self.dec_conv2 = nn.Conv2d(64, 64, 3, padding=1)
         self.upsample3 = nn.Upsample(size=128, mode='bilinear', align_corners=True)  # 64 -> 128
         self.dec_conv3 = nn.Conv2d(64, 1, 3, padding=1)
+    
+    def name(self):
+        return 'EncDec'
 
     def forward(self, x):
         x = x.to(device)
@@ -77,6 +80,9 @@ class UNet(nn.Module):
         self.dec_conv2 = nn.Conv2d(128, 64, 3, padding=1)
         self.upsample3 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
         self.dec_conv3 = nn.Conv2d(128, 1, 3, padding=1)
+    
+    def name(self):
+        return 'UNet'
 
     def forward(self, x):
         # Encoder
@@ -124,16 +130,16 @@ class UNet2(nn.Module):
         super(UNet2, self).__init__()
 
         # Encoder (downsampling using strided convolutions)
-        self.enc_conv0 = nn.Conv2d(3, 64, 3, stride=2, padding=1)  # stride=2 for downsampling
-        self.enc_conv1 = nn.Conv2d(64, 64, 3, stride=2, padding=1)  # stride=2 for downsampling
-        self.enc_conv2 = nn.Conv2d(64, 64, 3, stride=2, padding=1)  # stride=2 for downsampling
-        self.enc_conv3 = nn.Conv2d(64, 64, 3, stride=2, padding=1)  # stride=2 for downsampling
+        self.enc_conv0 = nn.Conv2d(3, 64, 3, stride=1, padding=1)    # Keep stride=1 here
+        self.enc_conv1 = nn.Conv2d(64, 64, 3, stride=2, padding=1)   # Downsampling starts here
+        self.enc_conv2 = nn.Conv2d(64, 64, 3, stride=2, padding=1)
+        self.enc_conv3 = nn.Conv2d(64, 64, 3, stride=2, padding=1)
 
         # Bottleneck
         self.bottleneck_conv = nn.Conv2d(64, 64, 3, padding=1)
 
         # Decoder (upsampling using transpose convolutions)
-        self.dec_tconv0 = nn.ConvTranspose2d(64, 64, 3, stride=2, padding=1, output_padding=1)
+        self.dec_tconv0 = nn.ConvTranspose2d(64, 64, 3, stride=1, padding=1, output_padding=0)  # Keep stride=1
         self.dec_conv0 = nn.Conv2d(128, 64, 3, padding=1)
         self.dec_tconv1 = nn.ConvTranspose2d(64, 64, 3, stride=2, padding=1, output_padding=1)
         self.dec_conv1 = nn.Conv2d(128, 64, 3, padding=1)
@@ -142,41 +148,43 @@ class UNet2(nn.Module):
         self.dec_tconv3 = nn.ConvTranspose2d(64, 64, 3, stride=2, padding=1, output_padding=1)
         self.dec_conv3 = nn.Conv2d(128, 1, 3, padding=1)
 
+    def name(self):
+        return 'UNet2'
+
     def forward(self, x):
         # Encoder
-        e0 = F.relu(self.enc_conv0(x))
-        skip0 = e0
+        e0 = F.relu(self.enc_conv0(x))     # Shape: [batch, 64, H, W]
+        skip0 = e0                         # Skip connection at full resolution
 
-        e1 = F.relu(self.enc_conv1(e0))
+        e1 = F.relu(self.enc_conv1(e0))    # Shape: [batch, 64, H/2, W/2]
         skip1 = e1
-        
-        e2 = F.relu(self.enc_conv2(e1))
+
+        e2 = F.relu(self.enc_conv2(e1))    # Shape: [batch, 64, H/4, W/4]
         skip2 = e2
 
-        e3 = F.relu(self.enc_conv3(e2))
+        e3 = F.relu(self.enc_conv3(e2))    # Shape: [batch, 64, H/8, W/8]
         skip3 = e3
 
         # Bottleneck
-        b = F.relu(self.bottleneck_conv(e3))
+        b = F.relu(self.bottleneck_conv(e3))  # Shape: [batch, 64, H/8, W/8]
 
         # Decoder
-        d0 = self.dec_tconv0(b)
-        print(d0.shape, skip3.shape)
-        d0 = torch.cat([d0, skip3], 1)
+        d0 = self.dec_tconv0(b)            # Shape: [batch, 64, H/8, W/8]
+        d0 = torch.cat([d0, skip3], dim=1)  # Concatenate with skip3
         d0 = F.relu(self.dec_conv0(d0))
-        
-        d1 = self.dec_tconv1(d0)
-        d1 = torch.cat([d1, skip2], 1)
+
+        d1 = self.dec_tconv1(d0)           # Shape: [batch, 64, H/4, W/4]
+        d1 = torch.cat([d1, skip2], dim=1)
         d1 = F.relu(self.dec_conv1(d1))
-        
-        d2 = self.dec_tconv2(d1)
-        d2 = torch.cat([d2, skip1], 1)
+
+        d2 = self.dec_tconv2(d1)           # Shape: [batch, 64, H/2, W/2]
+        d2 = torch.cat([d2, skip1], dim=1)
         d2 = F.relu(self.dec_conv2(d2))
-        
-        d3 = self.dec_tconv3(d2)
-        d3 = torch.cat([d3, skip0], 1)
+
+        d3 = self.dec_tconv3(d2)           # Shape: [batch, 64, H, W]
+        d3 = torch.cat([d3, skip0], dim=1)
         d3 = self.dec_conv3(d3)
-        
+
         return d3
 
 
@@ -203,6 +211,9 @@ class DilatedNet(nn.Module):
         self.dec_conv1 = nn.Conv2d(64, 64, 3, padding=4, dilation=4)  # dilation=4
         self.dec_conv2 = nn.Conv2d(64, 64, 3, padding=2, dilation=2)  # dilation=2
         self.dec_conv3 = nn.Conv2d(64, 1, 3, padding=1, dilation=1)  # dilation=1
+
+    def name(self):
+        return 'DilatedNet'
 
     def forward(self, x):
         # encoder

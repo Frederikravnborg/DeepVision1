@@ -116,7 +116,8 @@ def train(model, opt, loss_fn, epochs, train_loader, test_loader):
             plt.title('Output')
             plt.axis('off')
         plt.suptitle('%d / %d - loss: %f' % (epoch+1, epochs, avg_loss))
-        plt.savefig('output.png')
+        savename = f'{model.name()}, {epochs}e'
+        plt.savefig(f'Results/{savename}.png')
 
 
 def predict(model, data):
@@ -139,7 +140,7 @@ if __name__ == '__main__':
 
     # choose between these models:
     'EncDec, UNet, UNet2, DilatedNet'
-    model = UNet2()
+    model = DilatedNet()
     model = model.to(device)
     train(model, optim.Adam(model.parameters()), loss, epochs, train_loader, test_loader)
 
