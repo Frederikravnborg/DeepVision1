@@ -131,9 +131,14 @@ def predict(model, data):
 
 
 if __name__ == '__main__':
+    # choose between these losses:
+    'bce_loss, dice, intersection_over_union, accuracy, sensitivity, specificity, focal_loss, bce_total_variation'
     loss = bce_loss
 
-    model = EncDec().to(device)
+    # choose between these models:
+    'EncDec, UNet, UNet2, DilatedNet'
+    model = EncDec()
+    model = model.to(device)
     train(model, optim.Adam(model.parameters()), loss, 20, train_loader, test_loader)
     # model = UNet().to(device)
     # train(model, optim.Adam(model.parameters()), bce_loss, 20, train_loader, test_loader)

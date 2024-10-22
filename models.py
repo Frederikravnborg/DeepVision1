@@ -48,7 +48,6 @@ class EncDec(nn.Module):
         d2 = F.relu(self.dec_conv2(self.upsample2(d1)))
         d3 = self.dec_conv3(self.upsample3(d2))  
 
-        # d3 = torch.sigmoid(d3) ### added activation
         return d3
     
 
@@ -125,6 +124,44 @@ class UNet(nn.Module):
 #     ....
 
 
-# class DilatedNet:
-# ....
-# ....
+class DilatedNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        # We use the same value for padding and dilation in each layer to maintain the spatial dimensions of the feature maps.
+        # Specifically, by setting the padding equal to the dilation, we ensure that the output feature map has the same size as the input.
+        # This helps in preserving the spatial resolution throughout the network.
+        # The padding compensates for the increased receptive field caused by dilation, preventing any reduction in the feature map size.
+
+        # encoder with dilated convolutions instead of downsampling
+        self.enc_conv0 = nn.Conv2d(3, 64, 3, padding=1, dilation=1)  # dilation=1
+        self.enc_conv1 = nn.Conv2d(64, 64, 3, padding=2, dilation=2)  # dilation=2
+        self.enc_conv2 = nn.Conv2d(64, 64, 3, padding=4, dilation=4)  # dilation=4
+        self.enc_conv3 = nn.Conv2d(64, 64, 3, padding=8, dilation=8)  # dilation=8
+
+        # bottleneck
+        self.bottleneck_conv = nn.Conv2d(64, 64, 3, padding=1)
+
+        # decoder with dilated convolutions instead of upsampling
+        self.dec_conv0 = nn.Conv2d(64, 64, 3, padding=8, dilation=8)  # dilation=8
+        self.dec_conv1 = nn.Conv2d(64, 64, 3, padding=4, dilation=4)  # dilation=4
+        self.dec_conv2 = nn.Conv2d(64, 64, 3, padding=2, dilation=2)  # dilation=2
+        self.dec_conv3 = nn.Conv2d(64, 1, 3, padding=1, dilation=1)  # dilation=1
+
+    def forward(self, x):
+        # encoder
+        e0 = F.relu(self.enc_conv0(x))
+        e1 = F.relu(self.enc_conv1(e0))
+        e2 = F.relu(self.enc_conv2(e1))
+        e3 = F.relu(self.enc_conv3(e2))
+
+        # bottleneck
+        b = F.relu(self.bottleneck_conv(e3))
+
+        # decoder
+        d0 = F.relu(self.dec_conv0(b))
+        d1 = F.relu(self.dec_conv1(d0))
+        d2 = F.relu(self.dec_conv2(d1))
+        d3 = self.dec_conv3(d2)
+
+        return d3
