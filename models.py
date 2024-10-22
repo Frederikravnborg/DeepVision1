@@ -119,9 +119,65 @@ class UNet(nn.Module):
         return d3
     
 
-# class UNet2:
-#     ....
-#     ....
+class UNet2(nn.Module):
+    def __init__(self):
+        super(UNet2, self).__init__()
+
+        # Encoder (downsampling using strided convolutions)
+        self.enc_conv0 = nn.Conv2d(3, 64, 3, stride=2, padding=1)  # stride=2 for downsampling
+        self.enc_conv1 = nn.Conv2d(64, 64, 3, stride=2, padding=1)  # stride=2 for downsampling
+        self.enc_conv2 = nn.Conv2d(64, 64, 3, stride=2, padding=1)  # stride=2 for downsampling
+        self.enc_conv3 = nn.Conv2d(64, 64, 3, stride=2, padding=1)  # stride=2 for downsampling
+
+        # Bottleneck
+        self.bottleneck_conv = nn.Conv2d(64, 64, 3, padding=1)
+
+        # Decoder (upsampling using transpose convolutions)
+        self.dec_tconv0 = nn.ConvTranspose2d(64, 64, 3, stride=2, padding=1, output_padding=1)
+        self.dec_conv0 = nn.Conv2d(128, 64, 3, padding=1)
+        self.dec_tconv1 = nn.ConvTranspose2d(64, 64, 3, stride=2, padding=1, output_padding=1)
+        self.dec_conv1 = nn.Conv2d(128, 64, 3, padding=1)
+        self.dec_tconv2 = nn.ConvTranspose2d(64, 64, 3, stride=2, padding=1, output_padding=1)
+        self.dec_conv2 = nn.Conv2d(128, 64, 3, padding=1)
+        self.dec_tconv3 = nn.ConvTranspose2d(64, 64, 3, stride=2, padding=1, output_padding=1)
+        self.dec_conv3 = nn.Conv2d(128, 1, 3, padding=1)
+
+    def forward(self, x):
+        # Encoder
+        e0 = F.relu(self.enc_conv0(x))
+        skip0 = e0
+
+        e1 = F.relu(self.enc_conv1(e0))
+        skip1 = e1
+        
+        e2 = F.relu(self.enc_conv2(e1))
+        skip2 = e2
+
+        e3 = F.relu(self.enc_conv3(e2))
+        skip3 = e3
+
+        # Bottleneck
+        b = F.relu(self.bottleneck_conv(e3))
+
+        # Decoder
+        d0 = self.dec_tconv0(b)
+        print(d0.shape, skip3.shape)
+        d0 = torch.cat([d0, skip3], 1)
+        d0 = F.relu(self.dec_conv0(d0))
+        
+        d1 = self.dec_tconv1(d0)
+        d1 = torch.cat([d1, skip2], 1)
+        d1 = F.relu(self.dec_conv1(d1))
+        
+        d2 = self.dec_tconv2(d1)
+        d2 = torch.cat([d2, skip1], 1)
+        d2 = F.relu(self.dec_conv2(d2))
+        
+        d3 = self.dec_tconv3(d2)
+        d3 = torch.cat([d3, skip0], 1)
+        d3 = self.dec_conv3(d3)
+        
+        return d3
 
 
 class DilatedNet(nn.Module):
