@@ -187,7 +187,7 @@ class UNet2(nn.Module):
 
         return d3
 
----
+
 class UNet2batch(nn.Module):
     def __init__(self, n_classes=1):
         super(UNet2batch, self).__init__()
