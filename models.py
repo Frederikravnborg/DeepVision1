@@ -50,6 +50,8 @@ class EncDec(nn.Module):
         d1 = F.relu(self.dec_conv1(self.upsample1(d0)))
         d2 = F.relu(self.dec_conv2(self.upsample2(d1)))
         d3 = self.dec_conv3(self.upsample3(d2))  
+        
+        # d3 = torch.sigmoid(d3)
 
         return d3
     

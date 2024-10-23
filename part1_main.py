@@ -17,8 +17,9 @@ import matplotlib.pyplot as plt
 from models import *
 from losses import *
 
-
 data_path = '/dtu/datasets1/02516/phc_data'
+# data_path = '/Users/fredmac/Documents/DTU-FredMac/Deep Vision/Poster 2/phc_data'
+
 class PhC(torch.utils.data.Dataset):
     def __init__(self, train, transform, data_path=data_path):
         'Initialization'
@@ -89,8 +90,13 @@ def train(model, opt, loss_fn, epochs, train_loader, test_loader):
                 print('Y_pred is nan')
                 break
             loss = loss_fn(Y_batch, Y_pred)  # forward-pass
+            
             if torch.isnan(loss):   
                 print('Loss is nan')
+                break
+
+            if torch.isinf(loss):
+                print('Loss is inf')
                 break
             loss.backward()  # backward-pass
             
@@ -138,8 +144,9 @@ if __name__ == '__main__':
     loss = bce_loss
 
     # choose between these models:
-    'EncDec, UNet, UNet2, DilatedNet'
-    model = DilatedNet()
+    'EncDec(), UNet(), UNet2(), DilatedNet()'
+    model = EncDec()
     model = model.to(device)
-    train(model, optim.Adam(model.parameters()), loss, epochs, train_loader, test_loader)
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    train(model, optimizer, loss, epochs, train_loader, test_loader)
 
