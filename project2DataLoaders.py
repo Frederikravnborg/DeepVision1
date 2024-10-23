@@ -51,6 +51,7 @@ class Ph2(torch.utils.data.Dataset):
         self.transform = transform
         self.image_paths = sorted(glob.glob(data_path + '*/*_Dermoscopic_Image/*.bmp'))
         self.label_paths = sorted(glob.glob(data_path + '*/*_lesion/*.bmp'))
+
         
     def __len__(self):
         'Returns the total number of samples'
@@ -67,6 +68,29 @@ class Ph2(torch.utils.data.Dataset):
         X = self.transform(image)
         return X, Y
     
+click_count = 3
+def generate_clicks(mask, num_pos_clicks=10, num_neg_clicks=10):
+    # Get all coordinates for positive clicks (lesion area)
+
+    pos_coords = np.argwhere(mask == 1).T
+    # Get all coordinates for negative clicks (background area)
+    neg_coords = np.argwhere(mask == 0).T
+
+    # Randomly select points for positive and negative clicks
+    pos_clicks = pos_coords[random.sample(range(len(pos_coords)), num_pos_clicks)]
+    neg_clicks = neg_coords[random.sample(range(len(neg_coords)), num_neg_clicks)]
+
+    return pos_clicks, neg_clicks
+
+def plot_clicks(image, pos_clicks, neg_clicks):
+    plt.imshow(image.squeeze())
+    plt.scatter(np.array(pos_clicks)[:,2], np.array(pos_clicks)[:,1], color='green', label='Positive Clicks')
+    plt.scatter(np.array(neg_clicks)[:,2], np.array(neg_clicks)[:,1],  color='red', label='Negative Clicks')
+    plt.legend()
+    plt.show()
+
+
+
 
 ph2_size = 128
 ph2_train_transform = transforms.Compose([transforms.Resize((ph2_size, ph2_size)), 
