@@ -13,7 +13,7 @@ from torchsummary import summary
 import torch.optim as optim
 from time import time
 import matplotlib.pyplot as plt
-from IPython.display import clear_output
+# from IPython.display import clear_output
 from models import *
 from losses import *
 
@@ -104,7 +104,6 @@ def train(model, opt, loss_fn, epochs, train_loader, test_loader):
         # show intermediate results
         model.eval()  # testing mode
         Y_hat = F.sigmoid(model(X_test.to(device))).detach().cpu()
-        clear_output(wait=True)
         for k in range(6):
             plt.subplot(2, 6, k+1)
             plt.imshow(np.rollaxis(X_test[k].numpy(), 0, 3), cmap='gray')
