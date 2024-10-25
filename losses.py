@@ -22,40 +22,94 @@ def dice(y_real, y_pred):
     return 1 - torch.mean(2 * y_real*y_pred + 1) / torch.mean(y_real + y_pred + 1)
 
 def intersection_over_union(y_real, y_pred):
-    # Calculate Intersection over Union (IoU)
-    intersection = torch.sum(y_real * y_pred)
-    union = torch.sum(y_real) + torch.sum(y_pred) - intersection
-    iou = (intersection + 1e-6) / (union + 1e-6)  # Add small value to prevent division by zero
-    return iou
+    """Calculate Intersection over Union (IoU) between binary masks."""
+    # Ensure inputs are binary
+    y_pred = torch.sigmoid(y_pred)  # If predictions are logits
+    y_pred = (y_pred > 0.5).float()
+    
+    # Calculate intersection and union
+    intersection = torch.sum(y_real * y_pred, dim=(1,2,3))
+    union = torch.sum(y_real, dim=(1,2,3)) + torch.sum(y_pred, dim=(1,2,3)) - intersection
+    
+    # Calculate IoU
+    iou = (intersection + 1e-7) / (union + 1e-7)  # Increased epsilon for numerical stability
+    return torch.mean(iou)  # Return mean IoU across batch
 
 def accuracy(y_real, y_pred):
-    # Calculate Accuracy
-    y_pred_bin = torch.round(y_pred)  # Convert predictions to binary (0 or 1)
-    correct = torch.sum(y_real == y_pred_bin)
-    total = torch.numel(y_real)
-    return correct.float() / total
+    """Calculate binary classification accuracy."""
+    # Apply sigmoid if predictions are logits
+    y_pred = torch.sigmoid(y_pred)
+    y_pred_bin = (y_pred > 0.5).float()
+    
+    # Calculate accuracy
+    correct = torch.sum(y_real == y_pred_bin, dim=(1,2,3))
+    total = y_real.numel() / y_real.size(0)  # Account for batch size
+    
+    return torch.mean(correct.float() / total)
 
 def sensitivity(y_real, y_pred):
-    # Calculate Sensitivity (Recall or True Positive Rate)
-    y_pred_bin = torch.round(y_pred)
-    true_positive = torch.sum((y_real == 1) & (y_pred_bin == 1))
-    false_negative = torch.sum((y_real == 1) & (y_pred_bin == 0))
-    return (true_positive + 1e-6) / (true_positive + false_negative + 1e-6)
+    """Calculate sensitivity/recall (true positive rate)."""
+    # Apply sigmoid if predictions are logits
+    y_pred = torch.sigmoid(y_pred)
+    y_pred_bin = (y_pred > 0.5).float()
+    
+    # Calculate true positives and false negatives
+    true_positive = torch.sum((y_real == 1) & (y_pred_bin == 1), dim=(1,2,3))
+    false_negative = torch.sum((y_real == 1) & (y_pred_bin == 0), dim=(1,2,3))
+    
+    # Calculate sensitivity
+    sens = (true_positive + 1e-7) / (true_positive + false_negative + 1e-7)
+    return torch.mean(sens)
 
 def specificity(y_real, y_pred):
-    # Calculate Specificity (True Negative Rate)
-    y_pred_bin = torch.round(y_pred)
-    true_negative = torch.sum((y_real == 0) & (y_pred_bin == 0))
-    false_positive = torch.sum((y_real == 0) & (y_pred_bin == 1))
-    return (true_negative + 1e-6) / (true_negative + false_positive + 1e-6)
+    """Calculate specificity (true negative rate)."""
+    # Apply sigmoid if predictions are logits
+    y_pred = torch.sigmoid(y_pred)
+    y_pred_bin = (y_pred > 0.5).float()
+    
+    # Calculate true negatives and false positives
+    true_negative = torch.sum((y_real == 0) & (y_pred_bin == 0), dim=(1,2,3))
+    false_positive = torch.sum((y_real == 0) & (y_pred_bin == 1), dim=(1,2,3))
+    
+    # Calculate specificity
+    spec = (true_negative + 1e-7) / (true_negative + false_positive + 1e-7)
+    return torch.mean(spec)
 
 def focal_loss(y_real, y_pred, alpha=0.25, gamma=2.0):
-    bce_loss = - (y_real * torch.log(y_pred) + (1 - y_real) * torch.log(1 - y_pred))
-    pt = torch.where(y_real == 1, y_pred, 1 - y_pred)  # pt is the predicted probability for the true class
+    
+    # Apply sigmoid to get probabilities
+    y_pred = torch.sigmoid(y_pred)
+    
+    # Clip predictions for numerical stability
+    eps = 1e-7
+    y_pred = torch.clamp(y_pred, eps, 1 - eps)
+    
+    # Calculate binary cross entropy
+    bce_loss = -y_real * torch.log(y_pred) - (1 - y_real) * torch.log(1 - y_pred)
+    
+    # Calculate focal term
+    pt = torch.where(y_real == 1, y_pred, 1 - y_pred)
+    focal_term = (1 - pt) ** gamma
+    
+    # Apply class balancing
+    alpha_t = torch.where(y_real == 1, alpha, 1 - alpha)
+    
+    # Combine all terms
+    loss = alpha_t * focal_term * bce_loss
+    
+    return torch.mean(loss)
 
-    focal_loss = alpha * (1 - pt) ** gamma * bce_loss
-    return torch.mean(focal_loss)
+def bce_total_variation(y_real, y_pred, lambda_tv=0.1):
 
-
-def bce_total_variation(y_real, y_pred):
-    return bce_loss(y_real, y_pred) + 0.1*...
+    # Apply sigmoid to get probabilities
+    y_pred = torch.sigmoid(y_pred)
+    
+    # Calculate BCE loss
+    bce = F.binary_cross_entropy(y_pred, y_real, reduction='mean')
+    
+    # Calculate total variation
+    tv_h = torch.abs(y_pred[:, :, 1:, :] - y_pred[:, :, :-1, :]).mean()
+    tv_w = torch.abs(y_pred[:, :, :, 1:] - y_pred[:, :, :, :-1]).mean()
+    tv = tv_h + tv_w
+    
+    return bce + lambda_tv * tv
