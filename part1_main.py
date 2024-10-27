@@ -17,8 +17,9 @@ import matplotlib.pyplot as plt
 from models import *
 from losses import *
 
+# data_path = '/dtu/datasets1/02516/phc_data'
+data_path = '/Users/fredmac/Documents/DTU-FredMac/Deep Vision/Poster 2/phc_data'
 
-data_path = '/dtu/datasets1/02516/phc_data'
 class PhC(torch.utils.data.Dataset):
     def __init__(self, train, transform, data_path=data_path):
         'Initialization'
@@ -60,7 +61,8 @@ print('Loaded %d training images' % len(trainset))
 print('Loaded %d test images' % len(testset))
 
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device("mps" if torch.has_mps else "cuda" if torch.cuda.is_available() else "cpu")
 # device = torch.device('mps')
 print(device)
 
@@ -89,8 +91,13 @@ def train(model, opt, loss_fn, epochs, train_loader, test_loader):
                 print('Y_pred is nan')
                 break
             loss = loss_fn(Y_batch, Y_pred)  # forward-pass
+            
             if torch.isnan(loss):   
                 print('Loss is nan')
+                break
+
+            if torch.isinf(loss):
+                print('Loss is inf')
                 break
             loss.backward()  # backward-pass
             
@@ -131,15 +138,16 @@ def predict(model, data):
 
 
 if __name__ == '__main__':
-    epochs = 20
+    epochs = 75
 
     # choose between these losses:
-    'bce_loss, dice, intersection_over_union, accuracy, sensitivity, specificity, focal_loss, bce_total_variation'
-    loss = bce_loss
+    'bce_loss2, dice, intersection_over_union, accuracy, sensitivity, specificity, focal_loss, bce_total_variation'
+    loss = bce_loss2
 
     # choose between these models:
-    'EncDec, UNet, UNet2, DilatedNet'
-    model = DilatedNet()
+    'EncDec(), UNet(), UNet2(), DilatedNet()'
+    model = UNet2()
     model = model.to(device)
-    train(model, optim.Adam(model.parameters()), loss, epochs, train_loader, test_loader)
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    train(model, optimizer, loss, epochs, train_loader, test_loader)
 

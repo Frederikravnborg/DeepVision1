@@ -4,6 +4,20 @@ import torch
 def bce_loss(y_real, y_pred):
     return torch.mean(y_pred - y_real*y_pred + torch.log(1 + torch.exp(-y_pred)))
 
+
+def bce_loss2(y_real, y_pred):
+    # Clip predictions to prevent numerical instability
+    eps = 1e-7
+    y_pred = torch.clamp(y_pred, min=-100, max=100)  # Prevent extreme values
+    
+    # Apply sigmoid to get probabilities
+    y_pred_sigmoid = torch.sigmoid(y_pred)
+    y_pred_sigmoid = torch.clamp(y_pred_sigmoid, min=eps, max=1-eps)  # Prevent log(0)
+    
+    # Calculate BCE
+    loss = -(y_real * torch.log(y_pred_sigmoid) + (1 - y_real) * torch.log(1 - y_pred_sigmoid))
+    return torch.mean(loss)
+
 def dice(y_real, y_pred):
     return 1 - torch.mean(2 * y_real*y_pred + 1) / torch.mean(y_real + y_pred + 1)
 

@@ -2,7 +2,7 @@ from torch import nn
 import torch.nn.functional as F
 import torch
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("mps" if torch.has_mps else "cuda" if torch.cuda.is_available() else "cpu")
 
 class EncDec(nn.Module):
     def __init__(self):
@@ -50,6 +50,8 @@ class EncDec(nn.Module):
         d1 = F.relu(self.dec_conv1(self.upsample1(d0)))
         d2 = F.relu(self.dec_conv2(self.upsample2(d1)))
         d3 = self.dec_conv3(self.upsample3(d2))  
+        
+        # d3 = torch.sigmoid(d3)
 
         return d3
     
