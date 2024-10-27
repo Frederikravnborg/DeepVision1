@@ -322,3 +322,176 @@ class DilatedNet(nn.Module):
         d3 = self.dec_conv3(d2)
 
         return d3
+
+class UMax(nn.Module):
+    """
+    UMax: An enhanced UNet architecture fancy shit like attention gates, deep supervision, dilated convolutions, and residual connections.
+    """
+    def __init__(self, n_classes=1, input_channels=3, features_start=64, use_attention=True):
+        super(UMax, self).__init__()
+        
+        self.n_classes = n_classes
+        
+        # Encoder blocks with ResNet-style skip connections
+        self.enc_blocks = nn.ModuleList([
+            EncoderBlock(input_channels, features_start),
+            EncoderBlock(features_start, features_start * 2),
+            EncoderBlock(features_start * 2, features_start * 4),
+            EncoderBlock(features_start * 4, features_start * 8),
+        ])
+        
+        # Bottleneck with dilated convolutions
+        self.bottleneck = BottleneckBlock(features_start * 8, features_start * 16)
+        
+        # Decoder blocks with attention gates
+        self.dec_blocks = nn.ModuleList([
+            DecoderBlock(features_start * 16, features_start * 8, use_attention),
+            DecoderBlock(features_start * 8, features_start * 4, use_attention),
+            DecoderBlock(features_start * 4, features_start * 2, use_attention),
+            DecoderBlock(features_start * 2, features_start, use_attention),
+        ])
+        
+        # Deep supervision outputs
+        self.deep_supervision = nn.ModuleList([
+            nn.Conv2d(features_start * 8, n_classes, 1),
+            nn.Conv2d(features_start * 4, n_classes, 1),
+            nn.Conv2d(features_start * 2, n_classes, 1),
+        ])
+        
+        # Final output
+        self.final_conv = nn.Sequential(
+            nn.Conv2d(features_start, features_start, 3, padding=1),
+            nn.BatchNorm2d(features_start),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(features_start, n_classes, 1)
+        )
+        
+        # Dropout with varying rates
+        self.dropout1 = nn.Dropout2d(0.1)
+        self.dropout2 = nn.Dropout2d(0.2)
+        self.dropout3 = nn.Dropout2d(0.3)
+        
+    def forward(self, x):
+        # Store encoder outputs for skip connections
+        encoder_outputs = []
+        
+        # Encoder path with progressive dropout
+        for i, enc_block in enumerate(self.enc_blocks):
+            x = enc_block(x)
+            encoder_outputs.append(x)
+            if i > 0:  # Apply increasing dropout rates
+                x = getattr(self, f'dropout{i}')(x)
+        
+        # Bottleneck
+        x = self.bottleneck(x)
+        
+        # Store deep supervision outputs
+        deep_outputs = []
+        
+        # Decoder path
+        for i, (dec_block, enc_skip) in enumerate(zip(self.dec_blocks, reversed(encoder_outputs))):
+            x = dec_block(x, enc_skip)
+            if i < 3:  # Store deep supervision outputs for first 3 decoder blocks
+                deep_outputs.append(self.deep_supervision[i](x))
+        
+        # Final output
+        final_output = self.final_conv(x)
+        
+        # Apply activation based on number of classes
+        if self.n_classes == 1:
+            final_output = torch.sigmoid(final_output)
+            deep_outputs = [torch.sigmoid(out) for out in deep_outputs]
+        else:
+            final_output = torch.softmax(final_output, dim=1)
+            deep_outputs = [torch.softmax(out, dim=1) for out in deep_outputs]
+        
+        if self.training:
+            return [final_output] + deep_outputs
+        return final_output
+    
+class EncoderBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(EncoderBlock, self).__init__()
+        self.double_conv = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, 3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, 3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+        self.downsample = nn.MaxPool2d(2)
+        self.residual = nn.Conv2d(in_channels, out_channels, 1) if in_channels != out_channels else nn.Identity()
+        
+    def forward(self, x):
+        identity = self.residual(x)
+        out = self.double_conv(x)
+        out += identity  # ResNet-style skip connection
+        out = F.relu(out)
+        return self.downsample(out)
+
+class BottleneckBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(BottleneckBlock, self).__init__()
+        self.dilated_convs = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, 3, padding=2, dilation=2),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, 3, padding=4, dilation=4),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+        
+    def forward(self, x):
+        return self.dilated_convs(x)
+
+class AttentionGate(nn.Module):
+    def __init__(self, F_g, F_l, F_int):
+        super(AttentionGate, self).__init__()
+        self.W_g = nn.Sequential(
+            nn.Conv2d(F_g, F_int, kernel_size=1),
+            nn.BatchNorm2d(F_int)
+        )
+        self.W_x = nn.Sequential(
+            nn.Conv2d(F_l, F_int, kernel_size=1),
+            nn.BatchNorm2d(F_int)
+        )
+        self.psi = nn.Sequential(
+            nn.Conv2d(F_int, 1, kernel_size=1),
+            nn.BatchNorm2d(1),
+            nn.Sigmoid()
+        )
+        self.relu = nn.ReLU(inplace=True)
+        
+    def forward(self, g, x):
+        g1 = self.W_g(g)
+        x1 = self.W_x(x)
+        psi = self.relu(g1 + x1)
+        psi = self.psi(psi)
+        return x * psi
+
+class DecoderBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, use_attention=True):
+        super(DecoderBlock, self).__init__()
+        self.use_attention = use_attention
+        self.attention = AttentionGate(in_channels//2, in_channels//2, in_channels//4) if use_attention else None
+        
+        self.upsample = nn.ConvTranspose2d(in_channels, in_channels//2, kernel_size=2, stride=2)
+        self.double_conv = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, 3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, 3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+        
+    def forward(self, x, skip):
+        x = self.upsample(x)
+        if self.use_attention:
+            skip = self.attention(x, skip)
+        x = torch.cat([x, skip], dim=1)
+        return self.double_conv(x)
+
+    def name(self):
+        return 'UMax'
