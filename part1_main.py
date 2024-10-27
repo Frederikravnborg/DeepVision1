@@ -16,9 +16,9 @@ import matplotlib.pyplot as plt
 # from IPython.display import clear_output
 from models import *
 from losses import *
-
-# data_path = '/dtu/datasets1/02516/phc_data'
-data_path = '/Users/fredmac/Documents/DTU-FredMac/Deep Vision/Poster 2/phc_data'
+from dataloaders import *
+data_path = '/dtu/datasets1/02516/phc_data'
+# data_path = '/Users/fredmac/Documents/DTU-FredMac/Deep Vision/Poster 2/phc_data'
 
 class PhC(torch.utils.data.Dataset):
     def __init__(self, train, transform, data_path=data_path):
