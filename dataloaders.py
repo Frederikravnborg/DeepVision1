@@ -18,7 +18,8 @@ from time import time
 import matplotlib.pyplot as plt
 from IPython.display import clear_output
 import random
-
+import cv2
+from sklearn.cluster import KMeans
 
 PH2_path = '/dtu/datasets1/02516/PH2_Dataset_images/'
 DRIVE_path = '/dtu/datasets1/02516/DRIVE/training'
@@ -89,7 +90,84 @@ def plot_clicks(image, pos_clicks, neg_clicks):
     plt.legend()
     plt.show()
 
+def generate_cluster_based_clicks(mask, num_pos_clicks=10, num_neg_clicks=10, num_clusters=5):
+    # Convert to NumPy if mask is a PyTorch tensor
+    if num_clusters == 0:
+        num_clusters = 1
+    if isinstance(mask, torch.Tensor):
+        mask = mask.cpu().numpy()
+    
+    # Get positive and negative coordinates
+    pos_coords = np.argwhere(mask == 1)
+    neg_coords = np.argwhere(mask == 0)
+    
+    def select_clustered_points(coords, num_clicks):
+        # Perform clustering if there are enough points for clusters
+        if len(coords) >= num_clusters:
+            kmeans = KMeans(n_clusters=num_clusters)
+            kmeans.fit(coords)
+            clusters = [coords[kmeans.labels_ == i] for i in range(num_clusters)]
+            
+            # Sample one point from each cluster
+            clicks = []
+            for cluster in clusters:
+                if len(cluster) > 0:
+                    point = cluster[random.randint(0, len(cluster) - 1)]
+                    clicks.append(point)
+                    
+            # Add random points if we need more clicks
+            while len(clicks) < num_clicks:
+                extra_click = coords[random.randint(0, len(coords) - 1)]
+                clicks.append(extra_click)
+            return np.array(clicks[:num_clicks])
+        
+        # If not enough points for clustering, sample randomly
+        return coords[random.sample(range(len(coords)), num_clicks)]
+    
+    # Select positive and negative clicks
+    pos_clicks = select_clustered_points(pos_coords, num_pos_clicks)
+    neg_clicks = select_clustered_points(neg_coords, num_neg_clicks)
+    
+    # Convert back to tensors if needed
+    pos_clicks = torch.tensor(pos_clicks)
+    neg_clicks = torch.tensor(neg_clicks)
+    
+    return pos_clicks, neg_clicks
 
+
+
+def generate_edge_based_clicks(mask, num_pos_clicks=10, num_neg_clicks=10):
+    # Convert PyTorch tensor to NumPy if needed
+    if isinstance(mask, torch.Tensor):
+        mask = mask.cpu().numpy()
+    
+    # Detect edges in the mask
+    edges = cv2.Canny((mask * 255).astype(np.uint8), threshold1=50, threshold2=150)
+
+    # Get all coordinates on edges for positive and negative clicks
+    pos_coords = np.argwhere((mask == 1) & (edges > 0))
+    neg_coords = np.argwhere((mask == 0) & (edges > 0))
+
+    def sample_unique_points(coords, num_clicks):
+        # Shuffle and select unique points to avoid concentrated alignment
+        random.shuffle(coords)
+        return np.array(coords[:num_clicks])
+
+    # If there are not enough edge points, fall back to all mask points
+    if len(pos_coords) < num_pos_clicks:
+        pos_coords = np.argwhere(mask == 1)
+    if len(neg_coords) < num_neg_clicks:
+        neg_coords = np.argwhere(mask == 0)
+
+    # Randomly sample points on the edges
+    pos_clicks = sample_unique_points(pos_coords.tolist(), num_pos_clicks)
+    neg_clicks = sample_unique_points(neg_coords.tolist(), num_neg_clicks)
+
+    # Convert back to tensors
+    pos_clicks = torch.tensor(pos_clicks)
+    neg_clicks = torch.tensor(neg_clicks)
+    
+    return pos_clicks, neg_clicks
 
 """
 ph2_size = 128

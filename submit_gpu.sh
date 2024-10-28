@@ -1,5 +1,5 @@
 #!/bin/sh
-#BSUB -J z
+#BSUB -J group2task2
 #BSUB -e z%J.err
 #BSUB -q c02516
 #BSUB -gpu "num=1:mode=exclusive_process"
@@ -9,6 +9,8 @@
 #BSUB -R "rusage[mem=35G]"
 #BSUB -R "span[hosts=1]"
 #BSUB -W 12:00
+#BSUB -o OUTPUT_FILE%J.out
+#BSUB -e OUTPUT_FILE%J.err
 # load a scipy module
 # replace VERSION and uncomment
 # module load cuda/12.2.2
@@ -18,5 +20,5 @@
 
 source deepvision/bin/activate
 
-python3 part1_main.py
+python3 part2_main.py
 

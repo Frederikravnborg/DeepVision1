@@ -77,7 +77,7 @@ print(device)
 
 
 
-def train(model, opt, loss_fn, epochs, train_loader, test_loader, clicks):
+def train(model, opt, loss_fn, epochs, train_loader, test_loader, clicks,gen_type):
     X_test, Y_test = next(iter(test_loader))
     #print(len(X_test))
     for epoch in range(epochs):
@@ -98,10 +98,18 @@ def train(model, opt, loss_fn, epochs, train_loader, test_loader, clicks):
             all_pos_clicks, all_neg_clicks = [], []
             
             for i, mask in enumerate(Y_batch):
-                pos_clicks, neg_clicks = generate_clicks(mask.cpu(), clicks, clicks)
-                #print(f"Image {i} - Pos Clicks: {pos_clicks}, Neg Clicks: {neg_clicks}")
-                all_pos_clicks.append(pos_clicks)
-                all_neg_clicks.append(neg_clicks)
+                if gen_type == 'random':
+                    pos_clicks, neg_clicks = generate_clicks(mask.cpu(), clicks, clicks)
+                    all_pos_clicks.append(pos_clicks)
+                    all_neg_clicks.append(neg_clicks)
+                elif gen_type == 'edge':
+                    pos_clicks, neg_clicks = generate_edge_based_clicks(mask.cpu(), clicks, clicks)
+                    all_pos_clicks.append(pos_clicks)
+                    all_neg_clicks.append(neg_clicks)
+                else:
+                    pos_clicks, neg_clicks = generate_cluster_based_clicks(mask.cpu(), clicks, clicks ,int(clicks/2))
+                    all_pos_clicks.append(pos_clicks)
+                    all_neg_clicks.append(neg_clicks)
             # set parameter gradients to zero
             opt.zero_grad()
             # forward
@@ -140,7 +148,7 @@ def train(model, opt, loss_fn, epochs, train_loader, test_loader, clicks):
         print(' - loss: %f' % avg_loss)
 
         # Show intermediate results
-        if epoch == 19:
+        if epoch == epochs-1:
             model.eval()  # testing mode
             Y_hat = torch.sigmoid(model(gambiarra.to(device))).detach().cpu()
 
@@ -170,8 +178,8 @@ def train(model, opt, loss_fn, epochs, train_loader, test_loader, clicks):
 
             # Display title and save the figure
             plt.suptitle('%d / %d - loss: %f' % (epoch + 1, epochs, avg_loss))
-            savename = f'{model.name()}_{epochs}e_{clicks}clicks'
-            plt.savefig(f'Results/Project2_Part2/{savename}.png')
+            savename = f'{model.name()}_{epochs}e_{clicks}clicks_{gen_type}'
+            plt.savefig(f'./Results_task2/{savename}.png')
             plt.close()
 
 
@@ -230,7 +238,7 @@ def save_predicted_vs_true_masks(X_batch, Y_batch, Y_pred, num_samples=5, file_p
 
 
 if __name__ == '__main__':
-    epochs = 20
+    epochs = 75
 
     # choose between these losses:
     'bce_loss, dice, intersection_over_union, accuracy, sensitivity, specificity, focal_loss, bce_total_variation'
@@ -240,70 +248,73 @@ if __name__ == '__main__':
     'EncDec(), UNet(), UNet2(), DilatedNet()'
     
 
-    models_to_test = ['EncDec', 'Unet','Unet2', 'DilatedNed', 'Umax'] 
+    models_to_test = ['EncDec', 'Unet','Unet2', 'DilatedNed'] 
 
-    models_to_test = ['Unet'] 
+    #models_to_test = ['Unet'] 
+    click_generation = ['random', 'edge', 'kmeans']
+    #click_generation = ['kmeans']
     click_count = [1,2,4,6,8,10,12,14,16]
-    click_count = [1,2]
+    #click_count = [1]
     for m in models_to_test:
-        results_csv = f"./Results/Project2_Part2/{m}.csv"
+        results_csv = f"./Results_task2/{m}.csv"
         with open(results_csv,mode='w',newline='') as outfile:
             writer = csv.writer(outfile)
-            writer.writerow(['Click count','Loss', 'Dice overlap', 'Intersection over Union', 'Accuracy', 'Sensibility', 'Specificity'])
-            for clicks in click_count:
-                model = get_model(m)
-                model = model.to(device)
-                optimizer = optim.Adam(model.parameters(), lr=1e-3)
-                train(model, optimizer, loss, epochs, train_loader, val_loader, clicks)
+            writer.writerow(['Click count','Click generation','Loss', 'Dice overlap', 'Intersection over Union', 'Accuracy', 'Sensibility', 'Specificity'])
+            for gen in click_generation:
+                for clicks in click_count:
+                    model = get_model(m)
+                    model = model.to(device)
+                    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+                    train(model, optimizer, loss, epochs, train_loader, val_loader, clicks,gen)
 
-                total_eval_loss = 0
-                total_dice = 0
-                total_iou = 0
-                total_acc = 0
-                total_sensitivity = 0
-                total_specificity = 0
-                with torch.no_grad():
-                    for X_batch, Y_batch in test_loader:
-                        X_batch, Y_batch = X_batch.to(device), Y_batch.to(device)
-                        
-                        # Forward pass
-                        Y_pred = model(X_batch)  # Use sigmoid if using BCE loss
+                    total_eval_loss = 0
+                    total_dice = 0
+                    total_iou = 0
+                    total_acc = 0
+                    total_sensitivity = 0
+                    total_specificity = 0
+                    with torch.no_grad():
+                        for X_batch, Y_batch in test_loader:
+                            X_batch, Y_batch = X_batch.to(device), Y_batch.to(device)
+                            
+                            # Forward pass
+                            Y_pred = model(X_batch)  # Use sigmoid if using BCE loss
 
-                        # Compute mask-based evaluation loss
-                        eval_loss = bce_loss2(Y_batch, Y_pred)
-                        total_eval_loss += eval_loss
+                            # Compute mask-based evaluation loss
+                            eval_loss = bce_loss2(Y_batch, Y_pred)
+                            total_eval_loss += eval_loss
 
-                        Y_pred = torch.sigmoid(Y_pred)
-                        # Compute dice
-                        dice_metric = dice(Y_batch,Y_pred)
-                        total_dice += dice_metric
-                        # Compute intersection over union
-                        IoU = intersection_over_union(Y_batch,Y_pred)
-                        total_iou += IoU
-                        # Compute accuracy
-                        acc = accuracy(Y_batch,Y_pred)
-                        total_acc += acc
-                        # Compute sensitivity
-                        sens = sensitivity(Y_batch,Y_pred)
-                        total_sensitivity += sens
-                        # Compute specificity
-                        spec = specificity(Y_batch,Y_pred)
-                        total_specificity += spec
+                            Y_pred = torch.sigmoid(Y_pred)
+                            # Compute dice
+                            dice_metric = dice(Y_batch,Y_pred)
+                            total_dice += dice_metric
+                            # Compute intersection over union
+                            IoU = intersection_over_union(Y_batch,Y_pred)
+                            total_iou += IoU
+                            # Compute accuracy
+                            acc = accuracy(Y_batch,Y_pred)
+                            total_acc += acc
+                            # Compute sensitivity
+                            sens = sensitivity(Y_batch,Y_pred)
+                            total_sensitivity += sens
+                            # Compute specificity
+                            spec = specificity(Y_batch,Y_pred)
+                            total_specificity += spec
 
 
-                        evaluation_img_result = f"./Results/Project2_Part2/{m}_{clicks}.png"
-                        save_predicted_vs_true_masks(X_batch, Y_batch, Y_pred, file_path=evaluation_img_result)
-                
-                avg_dice = total_dice / len(test_loader)
-                avg_iou = total_iou / len(test_loader)
-                avg_acc = total_acc / len(test_loader)
-                avg_sensitivity = total_sensitivity / len(test_loader)
-                avg_specificity = total_specificity / len(test_loader)
-                avg_eval_loss = total_eval_loss / len(test_loader)
-                writer.writerow([clicks,avg_eval_loss.item(), avg_dice.item(), avg_iou.item(), avg_acc.item(), avg_sensitivity.item(), avg_specificity.item()])
-                print(f"Evaluation Mask-Based Loss: {avg_eval_loss}")
-                print(f"Average Dice Overlap: {avg_dice}")
-                print(f"Average Intersection over Union: {avg_iou}")
-                print(f"Average Accuracy: {avg_acc}")
-                print(f"Average Sensitivity: {avg_sensitivity}")
-                print(f"Average Specificity: {avg_specificity}")
+                            evaluation_img_result = f"./Results_task2/{m}_{clicks}_{gen}.png"
+                            save_predicted_vs_true_masks(X_batch, Y_batch, Y_pred, file_path=evaluation_img_result)
+                    
+                    avg_dice = total_dice / len(test_loader)
+                    avg_iou = total_iou / len(test_loader)
+                    avg_acc = total_acc / len(test_loader)
+                    avg_sensitivity = total_sensitivity / len(test_loader)
+                    avg_specificity = total_specificity / len(test_loader)
+                    avg_eval_loss = total_eval_loss / len(test_loader)
+                    writer.writerow([clicks,gen,avg_eval_loss.item(), avg_dice.item(), avg_iou.item(), avg_acc.item(), avg_sensitivity.item(), avg_specificity.item()])
+                    #print(f"Evaluation Mask-Based Loss: {avg_eval_loss}")
+                    #print(f"Average Dice Overlap: {avg_dice}")
+                    #print(f"Average Intersection over Union: {avg_iou}")
+                    #print(f"Average Accuracy: {avg_acc}")
+                    #print(f"Average Sensitivity: {avg_sensitivity}")
+                    #print(f"Average Specificity: {avg_specificity}")
