@@ -150,25 +150,32 @@ def evaluate_model(model, test_loader):
 # make_dot(model(torch.randn(20, 3, 256, 256)), params=dict(model.named_parameters()))
 
 
+models = [EncDec(), UNet(), UNet2(), DilatedNet()]
+pos_weights = [1.0, 2.0, calculate_pos_weight(train_loader), 10.0]  # Define the weights to test
+
 if __name__ == '__main__':
     epochs = 75
 
-    # choose between these losses:
-    loss_functions = [bce_loss2, focal_loss, bce_total_variation, weighted_bce_loss]
-    models = [EncDec(), UNet(), UNet2(), DilatedNet()]
+    # Loop over each model
+    for model in models:
+        model_name = model.__class__.__name__
+        model = model.to(device)
 
-    for loss_fn in loss_functions:
-        loss = loss_fn
-        for m in models:
-            # choose between these models:
-            'EncDec(), UNet(), UNet2(), DilatedNet()'
-            model = m
-            model = model.to(device)
+        # Loop over each weight for the weighted BCE loss
+        for pos_weight in pos_weights:
+            # Define the optimizer and reset the model
             optimizer = optim.Adam(model.parameters(), lr=1e-3)
-            
-            print(f"\nTraining {model.__class__.__name__} with {loss_fn.__name__}")
-            train(model, optimizer, loss_fn, epochs, train_loader, test_loader)
-            # Get final test accuracy
-            final_test_accuracy = evaluate_model(model, test_loader)
-            print(f"Test accuracy for {model.__class__.__name__} with {loss_fn.__name__}: {final_test_accuracy:.4f}\n")
+            model.apply(lambda m: m.reset_parameters() if hasattr(m, 'reset_parameters') else None)
 
+            # Define the loss function with the current weight
+            def loss_fn(y_real, y_pred):
+                return weighted_bce_loss(y_real, y_pred, pos_weight=pos_weight)
+            
+            print(f"\nTraining {model_name} with pos_weight={pos_weight}")
+
+            # Train the model
+            train(model, optimizer, loss_fn, epochs, train_loader, test_loader)
+
+            # Get the final test accuracy
+            final_test_accuracy = evaluate_model(model, test_loader)
+            print(f"Test accuracy for {model_name} with pos_weight={pos_weight}: {final_test_accuracy:.4f}\n")

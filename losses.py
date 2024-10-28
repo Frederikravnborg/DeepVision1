@@ -127,3 +127,21 @@ def weighted_bce_loss(y_real, y_pred, pos_weight=1.0):
     loss = - (pos_weight * y_real * torch.log(y_pred) + (1 - y_real) * torch.log(1 - y_pred))
     
     return loss.mean()
+
+def calculate_pos_weight(dataset):
+    positive_pixels = 0
+    negative_pixels = 0
+
+    # Loop through the dataset to accumulate positive and negative pixel counts
+    for _, labels in dataset:
+        positive_pixels += (labels == 1).sum().item()
+        negative_pixels += (labels == 0).sum().item()
+
+    # Calculate the pos_weight as the ratio
+    if positive_pixels > 0:
+        pos_weight = negative_pixels / positive_pixels
+    else:
+        pos_weight = 1.0  # Fallback if no positive pixels are found
+
+    print(f"Calculated pos_weight: {pos_weight:.4f}")
+    return pos_weight
