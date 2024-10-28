@@ -132,6 +132,19 @@ def predict(model, data):
     return np.array(Y_pred)
 
 
+def evaluate_model(model, test_loader):
+    """Evaluate the model on the test set and return the accuracy."""
+    model.eval()  # Set model to evaluation mode
+    test_accuracy = 0
+    with torch.no_grad():
+        for X_batch, Y_batch in test_loader:
+            X_batch, Y_batch = X_batch.to(device), Y_batch.to(device)
+            Y_pred = model(X_batch)
+            test_accuracy += accuracy(Y_batch, Y_pred).item()
+
+    # Average accuracy over the test set
+    test_accuracy /= len(test_loader)
+    return test_accuracy
 
 # from torchviz import make_dot
 # make_dot(model(torch.randn(20, 3, 256, 256)), params=dict(model.named_parameters()))
@@ -141,7 +154,7 @@ if __name__ == '__main__':
     epochs = 75
 
     # choose between these losses:
-    loss_functions = [bce_loss2, dice, intersection_over_union, accuracy, sensitivity, specificity, focal_loss, bce_total_variation]
+    loss_functions = [bce_loss2, focal_loss, bce_total_variation, weighted_bce_loss]
     models = [EncDec(), UNet(), UNet2(), DilatedNet()]
 
     for loss_fn in loss_functions:
@@ -152,5 +165,10 @@ if __name__ == '__main__':
             model = m
             model = model.to(device)
             optimizer = optim.Adam(model.parameters(), lr=1e-3)
-            train(model, optimizer, loss, epochs, train_loader, test_loader)
+            
+            print(f"\nTraining {model.__class__.__name__} with {loss_fn.__name__}")
+            train(model, optimizer, loss_fn, epochs, train_loader, test_loader)
+            # Get final test accuracy
+            final_test_accuracy = evaluate_model(model, test_loader)
+            print(f"Test accuracy for {model.__class__.__name__} with {loss_fn.__name__}: {final_test_accuracy:.4f}\n")
 

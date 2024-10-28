@@ -113,3 +113,17 @@ def bce_total_variation(y_real, y_pred, lambda_tv=0.1):
     tv = tv_h + tv_w
     
     return bce + lambda_tv * tv
+
+
+def weighted_bce_loss(y_real, y_pred, pos_weight=1.0):
+    # Apply sigmoid to logits to get probabilities
+    y_pred = torch.sigmoid(y_pred)
+    
+    # Avoid log(0) by clamping the predicted values
+    eps = 1e-7
+    y_pred = torch.clamp(y_pred, min=eps, max=1 - eps)
+    
+    # Calculate the weighted BCE loss
+    loss = - (pos_weight * y_real * torch.log(y_pred) + (1 - y_real) * torch.log(1 - y_pred))
+    
+    return loss.mean()
