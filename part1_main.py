@@ -74,6 +74,7 @@ def train(model, opt, loss_fn, epochs, train_loader, val_loader, test_loader):
         avg_loss = 0
         model.train()  # train mode
         for X_batch, Y_batch in train_loader:
+
             X_batch = X_batch.to(device)
             Y_batch = Y_batch.to(device)
 
@@ -86,7 +87,7 @@ def train(model, opt, loss_fn, epochs, train_loader, val_loader, test_loader):
             if torch.isnan(Y_pred).any():
                 print('Y_pred is nan')
                 break
-            loss = loss_fn(Y_batch, Y_pred)  # forward-pass
+            loss = loss_fn(Y_pred, Y_batch)  # forward-pass
             
             if torch.isnan(loss):   
                 print('Loss is nan')
@@ -96,7 +97,7 @@ def train(model, opt, loss_fn, epochs, train_loader, val_loader, test_loader):
                 print('Loss is inf')
                 break
             loss.backward()  # backward-pass
-            
+
             opt.step()  # update weights
 
             # calculate metrics to show the user
@@ -151,15 +152,15 @@ if __name__ == '__main__':
     epochs = 75
 
     # choose between these losses:
-    'bce_loss, dice, focal_loss,'
-    loss = bce_loss
+    ' bce_loss, focal_loss, nn.BCEWithLogitsLoss(pos_weight=torch.tensor([2.0]).to(device)) '
+    loss = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([2.0]).to(device))
 
     # choose between these models:
     'EncDec(), UNet(), UNet2(), DilatedNet()'
-    model = EncDec()
+    model = UNet()
     model = model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
-    # train_loader, val_loader, test_loader = ph2_loaders()
-    train_loader, val_loader, test_loader = drive_loaders()
+    train_loader, val_loader, test_loader = ph2_loaders()
+    # train_loader, val_loader, test_loader = drive_loaders()
     train(model, optimizer, loss, epochs, train_loader, val_loader, test_loader)
     evaluate(model, test_loader, "Test")

@@ -196,7 +196,103 @@ data_ph2_bce = {
     }
 }
 
-data = data_ph2_bce  # Choose the dataset to plot
+data_drive_bce = {
+    'EncDec': {
+        'Training': {
+            'Dice Coefficient': 0.8864,
+            'IoU': 0.0605,
+            'Accuracy': 0.8721,
+            'Sensitivity': 0.0000,
+            'Specificity': 1.0000
+        },
+        'Validation': {
+            'Dice Coefficient': 0.8902,
+            'IoU': 0.0599,
+            'Accuracy': 0.8817,
+            'Sensitivity': 0.0000,
+            'Specificity': 1.0000
+        },
+        'Test': {
+            'Dice Coefficient': 0.8817,
+            'IoU': 0.0614,
+            'Accuracy': 0.8550,
+            'Sensitivity': 0.0000,
+            'Specificity': 1.0000
+        }
+    },
+    'UNet': {
+        'Training': {
+            'Dice Coefficient': 0.9299,
+            'IoU': 0.3199,
+            'Accuracy': 0.8989,
+            'Sensitivity': 0.6146,
+            'Specificity': 0.9969
+        },
+        'Validation': {
+            'Dice Coefficient': 0.9343,
+            'IoU': 0.3304,
+            'Accuracy': 0.8884,
+            'Sensitivity': 0.5366,
+            'Specificity': 0.9993
+        },
+        'Test': {
+            'Dice Coefficient': 0.9195,
+            'IoU': 0.3106,
+            'Accuracy': 0.8816,
+            'Sensitivity': 0.6185,
+            'Specificity': 0.9819
+        }
+    },
+    'UNet2': {
+        'Training': {
+            'Dice Coefficient': 0.9281,
+            'IoU': 0.3776,
+            'Accuracy': 0.9004,
+            'Sensitivity': 0.8110,
+            'Specificity': 0.9914
+        },
+        'Validation': {
+            'Dice Coefficient': 0.9281,
+            'IoU': 0.3466,
+            'Accuracy': 0.9094,
+            'Sensitivity': 0.8249,
+            'Specificity': 0.9873
+        },
+        'Test': {
+            'Dice Coefficient': 0.9311,
+            'IoU': 0.3671,
+            'Accuracy': 0.9058,
+            'Sensitivity': 0.7654,
+            'Specificity': 0.9937
+        }
+    },
+    'DilatedNet': {
+        'Training': {
+            'Dice Coefficient': 0.8789,
+            'IoU': 0.1613,
+            'Accuracy': 0.8789,
+            'Sensitivity': 0.3031,
+            'Specificity': 0.9909
+        },
+        'Validation': {
+            'Dice Coefficient': 0.8767,
+            'IoU': 0.1374,
+            'Accuracy': 0.8687,
+            'Sensitivity': 0.0843,
+            'Specificity': 0.9978
+        },
+        'Test': {
+            'Dice Coefficient': 0.8781,
+            'IoU': 0.1586,
+            'Accuracy': 0.8736,
+            'Sensitivity': 0.2040,
+            'Specificity': 0.9974
+        }
+    }
+}
+
+
+data = data_drive_bce  # Choose the dataset to plot
 
 # Plotting
 import matplotlib.pyplot as plt
@@ -229,8 +325,24 @@ for idx, metric in enumerate(metrics):
     # Rotate x labels if needed
     plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
 
-    # Adjust y-axis limit if necessary
-    ax.set_ylim(0.75, 1.0)
+
+    # Collect all metric values for the current metric across all models and datasets
+    all_metric_values = []
+    for dataset in datasets:
+        metric_values = [data[model][dataset][metric] for model in models]
+        all_metric_values.extend(metric_values)
+
+    # Calculate the minimum and maximum values
+    min_val = min(all_metric_values)
+    max_val = max(all_metric_values)
+
+    # Calculate a 10% margin
+    y_margin = (max_val - min_val) * 0.1 if (max_val - min_val) != 0 else 0.05
+
+    # Set the dynamic y-axis limits with the margin
+    ax.set_ylim(min_val - y_margin, max_val + y_margin)
+
+
 
     # Add grid
     ax.grid(True, linestyle='--', axis='y', alpha=0.7)
