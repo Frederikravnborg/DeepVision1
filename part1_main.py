@@ -3,76 +3,72 @@ import numpy as np
 import glob
 import PIL.Image as Image
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-import torchvision.datasets as datasets
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 import torchvision.transforms as transforms
-from torchvision import models
-from torchsummary import summary
 import torch.optim as optim
-from time import time
 import matplotlib.pyplot as plt
-# from IPython.display import clear_output
 from models import *
-from losses import *
-
-# data_path = '/dtu/datasets1/02516/phc_data'
-data_path = '/Users/fredmac/Documents/DTU-FredMac/Deep Vision/Poster 2/phc_data'
-
-class PhC(torch.utils.data.Dataset):
-    def __init__(self, train, transform, data_path=data_path):
-        'Initialization'
-        self.transform = transform
-        data_path = os.path.join(data_path, 'train' if train else 'test')
-        self.image_paths = sorted(glob.glob(data_path + '/images/*.jpg'))
-        self.label_paths = sorted(glob.glob(data_path + '/labels/*.png'))
-        
-    def __len__(self):
-        'Returns the total number of samples'
-        return len(self.image_paths)
-
-    def __getitem__(self, idx):
-        'Generates one sample of data'
-        image_path = self.image_paths[idx]
-        label_path = self.label_paths[idx]
-        
-        image = Image.open(image_path)
-        label = Image.open(label_path)
-        Y = self.transform(label)
-        X = self.transform(image)
-        return X, Y
+from losses_metrics import *
+from project2DataLoaders import ph2_loaders, drive_loaders
 
 
-size = 128
-train_transform = transforms.Compose([transforms.Resize((size, size)), 
-                                    transforms.ToTensor()])
-test_transform = transforms.Compose([transforms.Resize((size, size)), 
-                                    transforms.ToTensor()])
+def compute_metrics(model, data_loader):
+    model.eval()
+    total_dice = 0
+    total_iou = 0
+    total_accuracy = 0
+    total_sensitivity = 0
+    total_specificity = 0
+    num_batches = 0
 
-batch_size = 6
-trainset = PhC(train=True, transform=train_transform)
-train_loader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=0)
-testset = PhC(train=False, transform=test_transform)
-test_loader = DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=0)
+    with torch.no_grad():
+        for X_batch, Y_batch in data_loader:
+            X_batch = X_batch.to(device)
+            Y_batch = Y_batch.to(device)
+            
+            Y_pred = model(X_batch)
+            Y_pred = torch.sigmoid(Y_pred)
+            
+            # Compute metrics using your functions
+            batch_dice = 1 - dice(Y_batch, Y_pred)  # Adjusted since your dice function returns 1 - Dice coefficient
+            batch_iou = intersection_over_union(Y_batch, Y_pred)
+            batch_accuracy = accuracy(Y_batch, Y_pred)
+            batch_sensitivity = sensitivity(Y_batch, Y_pred)
+            batch_specificity = specificity(Y_batch, Y_pred)
 
-# %%
-print('Loaded %d training images' % len(trainset))
-print('Loaded %d test images' % len(testset))
+            total_dice += batch_dice.item()
+            total_iou += batch_iou.item()
+            total_accuracy += batch_accuracy.item()
+            total_sensitivity += batch_sensitivity.item()
+            total_specificity += batch_specificity.item()
+            num_batches += 1
 
+    # Compute averages
+    avg_dice = total_dice / num_batches
+    avg_iou = total_iou / num_batches
+    avg_accuracy = total_accuracy / num_batches
+    avg_sensitivity = total_sensitivity / num_batches
+    avg_specificity = total_specificity / num_batches
 
-# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-device = torch.device("mps" if torch.has_mps else "cuda" if torch.cuda.is_available() else "cpu")
-# device = torch.device('mps')
-print(device)
+    metrics = {
+        'Dice Coefficient': avg_dice,
+        'IoU': avg_iou,
+        'Accuracy': avg_accuracy,
+        'Sensitivity': avg_sensitivity,
+        'Specificity': avg_specificity
+    }
+    return metrics
 
+def print_metrics(metrics, dataset_name):
+    print(f"\n{dataset_name} set metrics:")
+    for key, value in metrics.items():
+        print(f"{key}: {value:.4f}")
 
-
-def train(model, opt, loss_fn, epochs, train_loader, test_loader):
+def train(model, opt, loss_fn, epochs, train_loader, val_loader, test_loader):
     X_test, Y_test = next(iter(test_loader))
 
     for epoch in range(epochs):
-        tic = time()
         print('* Epoch %d/%d' % (epoch+1, epochs))
 
         avg_loss = 0
@@ -104,13 +100,12 @@ def train(model, opt, loss_fn, epochs, train_loader, test_loader):
             opt.step()  # update weights
 
             # calculate metrics to show the user
-            avg_loss += loss / len(train_loader)
-        toc = time()
+            avg_loss += loss.item() / len(train_loader)
         print(' - loss: %f' % avg_loss)
 
         # show intermediate results
         model.eval()  # testing mode
-        Y_hat = F.sigmoid(model(X_test.to(device))).detach().cpu()
+        Y_hat = torch.sigmoid(model(X_test.to(device))).detach().cpu()
         for k in range(6):
             plt.subplot(2, 6, k+1)
             plt.imshow(np.rollaxis(X_test[k].numpy(), 0, 3), cmap='gray')
@@ -124,30 +119,45 @@ def train(model, opt, loss_fn, epochs, train_loader, test_loader):
         plt.suptitle('%d / %d - loss: %f' % (epoch+1, epochs, avg_loss))
         savename = f'{model.name()}, {epochs}e'
         plt.savefig(f'Results/{savename}.png')
+        plt.close()
 
+        # Evaluate metrics on training and validation sets during the last epoch
+        if epoch == epochs - 1:
+            train_metrics = compute_metrics(model, train_loader)
+            print_metrics(train_metrics, "Training")
+            val_metrics = compute_metrics(model, val_loader)
+            print_metrics(val_metrics, "Validation")
+
+    # Save the model after the last epoch
+    model_save_name = f'Models/{model.name()}_{epochs}e.pth'
+    torch.save(model.state_dict(), model_save_name)
+    print(f'Model saved at {model_save_name}')
+
+def evaluate(model, data_loader, dataset_name="Test"):
+    metrics = compute_metrics(model, data_loader)
+    print_metrics(metrics, dataset_name)
 
 def predict(model, data):
     model.eval()  # testing mode
-    Y_pred = [F.sigmoid(model(X_batch.to(device))) for X_batch, _ in data]
+    Y_pred = [torch.sigmoid(model(X_batch.to(device))) for X_batch, _ in data]
     return np.array(Y_pred)
 
 
-
-# from torchviz import make_dot
-# make_dot(model(torch.randn(20, 3, 256, 256)), params=dict(model.named_parameters()))
-
-
 if __name__ == '__main__':
+    device = torch.device("mps" if torch.backends.mps.is_built() else "cuda" if torch.cuda.is_available() else "cpu")
+    print(device)
+
     epochs = 75
 
     # choose between these losses:
-    'bce_loss2, dice, intersection_over_union, accuracy, sensitivity, specificity, focal_loss, bce_total_variation'
-    loss = bce_loss2
+    'bce_loss, dice, focal_loss,'
+    loss = bce_loss
 
     # choose between these models:
     'EncDec(), UNet(), UNet2(), DilatedNet()'
-    model = UNet2()
+    model = EncDec()
     model = model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
-    train(model, optimizer, loss, epochs, train_loader, test_loader)
-
+    ph2_train_loader, ph2_val_loader, ph2_test_loader = ph2_loaders()
+    train(model, optimizer, loss, epochs, ph2_train_loader, ph2_val_loader, ph2_test_loader)
+    evaluate(model, ph2_test_loader, "Test")
