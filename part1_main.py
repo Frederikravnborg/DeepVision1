@@ -122,7 +122,7 @@ def train(model, opt, loss_fn, epochs, train_loader, test_loader):
             plt.title('Output')
             plt.axis('off')
         plt.suptitle('%d / %d - loss: %f' % (epoch+1, epochs, avg_loss))
-        savename = f'{model.name()}, {epochs}e'
+        savename = f'{model.name()}, {loss_fn.__name__}, {epochs}e'
         plt.savefig(f'Results/{savename}.png')
 
 
@@ -141,13 +141,16 @@ if __name__ == '__main__':
     epochs = 75
 
     # choose between these losses:
-    'bce_loss2, dice, intersection_over_union, accuracy, sensitivity, specificity, focal_loss, bce_total_variation'
-    loss = bce_loss2
+    loss_functions = [bce_loss2, dice, intersection_over_union, accuracy, sensitivity, specificity, focal_loss, bce_total_variation]
+    models = [EncDec(), UNet(), UNet2(), DilatedNet()]
 
-    # choose between these models:
-    'EncDec(), UNet(), UNet2(), DilatedNet()'
-    model = UNet2()
-    model = model.to(device)
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
-    train(model, optimizer, loss, epochs, train_loader, test_loader)
+    for loss_fn in loss_functions:
+        loss = loss_fn
+        for m in models:
+            # choose between these models:
+            'EncDec(), UNet(), UNet2(), DilatedNet()'
+            model = m
+            model = model.to(device)
+            optimizer = optim.Adam(model.parameters(), lr=1e-3)
+            train(model, optimizer, loss, epochs, train_loader, test_loader)
 
