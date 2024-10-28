@@ -106,7 +106,8 @@ def train(model, opt, loss_fn, epochs, train_loader, val_loader, test_loader):
         # show intermediate results
         model.eval()  # testing mode
         Y_hat = torch.sigmoid(model(X_test.to(device))).detach().cpu()
-        for k in range(6):
+        batch_size = X_test.size(0)
+        for k in range(batch_size):
             plt.subplot(2, 6, k+1)
             plt.imshow(np.rollaxis(X_test[k].numpy(), 0, 3), cmap='gray')
             plt.title('Real')
@@ -158,6 +159,7 @@ if __name__ == '__main__':
     model = EncDec()
     model = model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
-    ph2_train_loader, ph2_val_loader, ph2_test_loader = ph2_loaders()
-    train(model, optimizer, loss, epochs, ph2_train_loader, ph2_val_loader, ph2_test_loader)
-    evaluate(model, ph2_test_loader, "Test")
+    # train_loader, val_loader, test_loader = ph2_loaders()
+    train_loader, val_loader, test_loader = drive_loaders()
+    train(model, optimizer, loss, epochs, train_loader, val_loader, test_loader)
+    evaluate(model, test_loader, "Test")

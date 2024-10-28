@@ -22,13 +22,13 @@ class EncDec(nn.Module):
         self.bottleneck_conv = nn.Conv2d(64, 64, 3, padding=1)
 
         # decoder (upsampling)
-        self.upsample0 = nn.Upsample(size=16, mode='bilinear', align_corners=True)
+        self.upsample0 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
         self.dec_conv0 = nn.Conv2d(64, 64, 3, padding=1)
-        self.upsample1 = nn.Upsample(size=32, mode='bilinear', align_corners=True)  # 16 -> 32
+        self.upsample1 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)  # 16 -> 32
         self.dec_conv1 = nn.Conv2d(64, 64, 3, padding=1)
-        self.upsample2 = nn.Upsample(size=64, mode='bilinear', align_corners=True)  # 32 -> 64
+        self.upsample2 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)  # 32 -> 64
         self.dec_conv2 = nn.Conv2d(64, 64, 3, padding=1)
-        self.upsample3 = nn.Upsample(size=128, mode='bilinear', align_corners=True)  # 64 -> 128
+        self.upsample3 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)  # 64 -> 128
         self.dec_conv3 = nn.Conv2d(64, 1, 3, padding=1)
     
     def name(self):
@@ -49,7 +49,7 @@ class EncDec(nn.Module):
         d0 = F.relu(self.dec_conv0(self.upsample0(b)))
         d1 = F.relu(self.dec_conv1(self.upsample1(d0)))
         d2 = F.relu(self.dec_conv2(self.upsample2(d1)))
-        d3 = self.dec_conv3(self.upsample3(d2))  
+        d3 = self.dec_conv3(self.upsample3(d2))
         
         # d3 = torch.sigmoid(d3)
 
