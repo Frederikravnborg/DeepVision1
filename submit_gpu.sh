@@ -16,7 +16,7 @@
 # activate the virtual environment
 # NOTE: needs to have been built with the same SciPy version above!
 
-source deepvision/bin/activate
+#source deepvision/bin/activate
 
 python3 part1_main.py
 
