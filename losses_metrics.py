@@ -1,11 +1,12 @@
 import torch
 
+#### Losses ####
 
-def bce_loss(y_real, y_pred):
+def bce_loss_unstable(y_real, y_pred):
     return torch.mean(y_pred - y_real*y_pred + torch.log(1 + torch.exp(-y_pred)))
 
 
-def bce_loss2(y_real, y_pred):
+def bce_loss(y_real, y_pred):
     # Clip predictions to prevent numerical instability
     eps = 1e-7
     y_pred = torch.clamp(y_pred, min=-100, max=100)  # Prevent extreme values
@@ -17,6 +18,20 @@ def bce_loss2(y_real, y_pred):
     # Calculate BCE
     loss = -(y_real * torch.log(y_pred_sigmoid) + (1 - y_real) * torch.log(1 - y_pred_sigmoid))
     return torch.mean(loss)
+
+def focal_loss(y_real, y_pred, alpha=0.25, gamma=2.0):
+    bce_loss = - (y_real * torch.log(y_pred) + (1 - y_real) * torch.log(1 - y_pred))
+    pt = torch.where(y_real == 1, y_pred, 1 - y_pred)  # pt is the predicted probability for the true class
+
+    focal_loss = alpha * (1 - pt) ** gamma * bce_loss
+    return torch.mean(focal_loss)
+
+
+def bce_total_variation(y_real, y_pred):
+    return bce_loss(y_real, y_pred) + 0.1*...
+
+
+#### Metrics ####
 
 def dice(y_real, y_pred):
     return 1 - torch.mean(2 * y_real*y_pred + 1) / torch.mean(y_real + y_pred + 1)
@@ -49,13 +64,4 @@ def specificity(y_real, y_pred):
     false_positive = torch.sum((y_real == 0) & (y_pred_bin == 1))
     return (true_negative + 1e-6) / (true_negative + false_positive + 1e-6)
 
-def focal_loss(y_real, y_pred, alpha=0.25, gamma=2.0):
-    bce_loss = - (y_real * torch.log(y_pred) + (1 - y_real) * torch.log(1 - y_pred))
-    pt = torch.where(y_real == 1, y_pred, 1 - y_pred)  # pt is the predicted probability for the true class
 
-    focal_loss = alpha * (1 - pt) ** gamma * bce_loss
-    return torch.mean(focal_loss)
-
-
-def bce_total_variation(y_real, y_pred):
-    return bce_loss(y_real, y_pred) + 0.1*...
