@@ -91,7 +91,7 @@ def plot_clicks(image, pos_clicks, neg_clicks):
 
 
 
-
+"""
 ph2_size = 128
 ph2_train_transform = transforms.Compose([transforms.Resize((ph2_size, ph2_size)), 
                                     transforms.ToTensor()])
@@ -125,3 +125,5 @@ train_drive, val_drive, test_drive = random_split(DRIVEset, [train_size, val_siz
 drive_train_loader = DataLoader(train_drive, batch_size=drive_batch_size, shuffle=True, num_workers=3)
 drive_val_loader = DataLoader(val_drive, batch_size=drive_batch_size, shuffle=True, num_workers=3)
 drive_test_loader = DataLoader(test_drive, batch_size=drive_batch_size, shuffle=False, num_workers=3)
+
+"""
