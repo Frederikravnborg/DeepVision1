@@ -87,7 +87,7 @@ def evaluate_model(model, test_loader):
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Experiment configurations
-models = [EncDec(), UNet(), UNet2(), DilatedNet()]
+models = [UNet2()]
 image_sizes = [64, 128, 256, 512]
 epochs = 75  # Adjust as needed for testing
 
