@@ -1,106 +1,11 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import os
+
+# Ensure the 'Results' directory exists
+os.makedirs('Results', exist_ok=True)
 
 # Define the data
-models = ['EncDec', 'UNet', 'UNet2', 'DilatedNet']
-datasets = ['Training', 'Validation', 'Test']
-metrics = ['Dice Coefficient', 'IoU', 'Accuracy', 'Sensitivity', 'Specificity']
-
-data_phc_bce = {
-    'EncDec': {
-        'Training': {
-            'Dice Coefficient': 0.9809,
-            'IoU': 0.8980,
-            'Accuracy': 0.9790,
-            'Sensitivity': 0.9654,
-            'Specificity': 0.9841
-        },
-        'Validation': {
-            'Dice Coefficient': 0.9734,
-            'IoU': 0.8543,
-            'Accuracy': 0.9660,
-            'Sensitivity': 0.9444,
-            'Specificity': 0.9737
-        },
-        'Test': {
-            'Dice Coefficient': 0.9736,
-            'IoU': 0.8632,
-            'Accuracy': 0.9659,
-            'Sensitivity': 0.9486,
-            'Specificity': 0.9724
-        }
-    },
-    'UNet': {
-        'Training': {
-            'Dice Coefficient': 0.9934,
-            'IoU': 0.9637,
-            'Accuracy': 0.9929,
-            'Sensitivity': 0.9856,
-            'Specificity': 0.9957
-        },
-        'Validation': {
-            'Dice Coefficient': 0.9912,
-            'IoU': 0.9485,
-            'Accuracy': 0.9891,
-            'Sensitivity': 0.9750,
-            'Specificity': 0.9938
-        },
-        'Test': {
-            'Dice Coefficient': 0.9901,
-            'IoU': 0.9459,
-            'Accuracy': 0.9872,
-            'Sensitivity': 0.9768,
-            'Specificity': 0.9912
-        }
-    },
-    'UNet2': {
-        'Training': {
-            'Dice Coefficient': 0.9950,
-            'IoU': 0.9722,
-            'Accuracy': 0.9946,
-            'Sensitivity': 0.9872,
-            'Specificity': 0.9974
-        },
-        'Validation': {
-            'Dice Coefficient': 0.9889,
-            'IoU': 0.9385,
-            'Accuracy': 0.9845,
-            'Sensitivity': 0.9712,
-            'Specificity': 0.9895
-        },
-        'Test': {
-            'Dice Coefficient': 0.9901,
-            'IoU': 0.9458,
-            'Accuracy': 0.9862,
-            'Sensitivity': 0.9755,
-            'Specificity': 0.9903
-        }
-    },
-    'DilatedNet': {
-        'Training': {
-            'Dice Coefficient': 0.9896,
-            'IoU': 0.9433,
-            'Accuracy': 0.9892,
-            'Sensitivity': 0.9806,
-            'Specificity': 0.9925
-        },
-        'Validation': {
-            'Dice Coefficient': 0.9849,
-            'IoU': 0.9172,
-            'Accuracy': 0.9815,
-            'Sensitivity': 0.9742,
-            'Specificity': 0.9842
-        },
-        'Test': {
-            'Dice Coefficient': 0.9842,
-            'IoU': 0.9154,
-            'Accuracy': 0.9800,
-            'Sensitivity': 0.9682,
-            'Specificity': 0.9846
-        }
-    }
-}
-
 data_ph2_bce = {
     'EncDec': {
         'Training': {
@@ -291,68 +196,137 @@ data_drive_bce = {
     }
 }
 
+data_loss_metrics = {
+    'BCE': {
+        'Training': {
+            'Dice Coefficient': 0.9813,
+            'IoU': 0.9043,
+            'Accuracy': 0.9791,
+            'Sensitivity': 0.9619,
+            'Specificity': 0.9860
+        },
+        'Validation': {
+            'Dice Coefficient': 0.9734,
+            'IoU': 0.8484,
+            'Accuracy': 0.9680,
+            'Sensitivity': 0.9463,
+            'Specificity': 0.9791
+        },
+        'Test': {
+            'Dice Coefficient': 0.9719,
+            'IoU': 0.8537,
+            'Accuracy': 0.9626,
+            'Sensitivity': 0.9219,
+            'Specificity': 0.9835
+        }
+    },
+    'BCE weight=2': {
+        'Training': {
+            'Dice Coefficient': 0.9568,
+            'IoU': 0.8056,
+            'Accuracy': 0.9615,
+            'Sensitivity': 0.9724,
+            'Specificity': 0.9548
+        },
+        'Validation': {
+            'Dice Coefficient': 0.9548,
+            'IoU': 0.7709,
+            'Accuracy': 0.9493,
+            'Sensitivity': 0.9135,
+            'Specificity': 0.9621
+        },
+        'Test': {
+            'Dice Coefficient': 0.9590,
+            'IoU': 0.7984,
+            'Accuracy': 0.9620,
+            'Sensitivity': 0.9479,
+            'Specificity': 0.9685
+        }
+    },
+    'Focal': {
+        'Training': {
+            'Dice Coefficient': 0.7544,
+            'IoU': 0.3238,
+            'Accuracy': 0.3405,
+            'Sensitivity': 1.0000,
+            'Specificity': 0.0231
+        },
+        'Validation': {
+            'Dice Coefficient': 0.7702,
+            'IoU': 0.3661,
+            'Accuracy': 0.3865,
+            'Sensitivity': 1.0000,
+            'Specificity': 0.0279
+        },
+        'Test': {
+            'Dice Coefficient': 0.7538,
+            'IoU': 0.3181,
+            'Accuracy': 0.3202,
+            'Sensitivity': 1.0000,
+            'Specificity': 0.0250
+        }
+    }
+}
 
-data = data_drive_bce  # Choose the dataset to plot
+# List of data dictionaries with their names and corresponding models
+data_list = [
+    ('PH2 BCE', data_ph2_bce, ['EncDec', 'UNet', 'UNet2', 'DilatedNet']),
+    ('Drive BCE', data_drive_bce, ['EncDec', 'UNet', 'UNet2', 'DilatedNet']),
+    ('Loss Metrics', data_loss_metrics, ['BCE', 'BCE weight=2', 'Focal'])
+]
 
-# Plotting
-import matplotlib.pyplot as plt
-import numpy as np
-
-# Set up the figure and axes
-fig, axs = plt.subplots(1, len(metrics), figsize=(20, 5), sharey=False)
-
-# Colors for datasets
+# Define metrics and datasets
+metrics = ['Dice Coefficient', 'IoU', 'Accuracy', 'Sensitivity', 'Specificity']
+datasets = ['Training', 'Validation', 'Test']
 colors = {'Training': 'skyblue', 'Validation': 'lightgreen', 'Test': 'lightcoral'}
 dataset_labels = list(colors.keys())
 
-# Iterate over the metrics and plot
-for idx, metric in enumerate(metrics):
-    ax = axs[idx]
-    x = np.arange(len(models))  # the label locations
-    width = 0.2  # the width of the bars
+# Set up the figure and axes
+fig, axs = plt.subplots(len(data_list), len(metrics), figsize=(25, 10), sharey=False)
 
-    for i, dataset in enumerate(datasets):
-        metric_values = [data[model][dataset][metric] for model in models]
-        offset = (i - 1) * width  # Adjust the position of the bar
-        ax.bar(x + offset, metric_values, width, label=dataset if idx == 0 else "", color=colors[dataset])
+# Iterate over each data dictionary (row)
+for row_idx, (data_name, data_dict, models) in enumerate(data_list):
+    # Iterate over each metric (column)
+    for col_idx, metric in enumerate(metrics):
+        ax = axs[row_idx, col_idx]
+        x = np.arange(len(models))  # the label locations
+        width = 0.2  # the width of the bars
 
-    # Add some text for labels, title, and custom x-axis tick labels, etc.
-    ax.set_ylabel(metric)
-    ax.set_title(metric)
-    ax.set_xticks(x)
-    ax.set_xticklabels(models)
+        # Plot bars for each dataset
+        for i, dataset in enumerate(datasets):
+            metric_values = [data_dict[model][dataset][metric] for model in models]
+            offset = (i - 1) * width  # Center the bars
+            # Only add label to the first subplot to avoid duplicate legends
+            label = dataset if (row_idx == 0 and col_idx == 0) else ""
+            ax.bar(x + offset, metric_values, width, label=label, color=colors[dataset])
 
-    # Rotate x labels if needed
-    plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
+        # Add metric titles (column titles) with increased font size
+        if row_idx == 0:
+            ax.set_title(metric, fontsize=24, fontweight='bold')  # Increased font size
 
+        # Add data dictionary names as y-axis labels (row titles) with substantially increased font size
+        if col_idx == 0:
+            ax.set_ylabel(data_name, fontsize=24, fontweight='bold')  # Substantially increased font size
 
-    # Collect all metric values for the current metric across all models and datasets
-    all_metric_values = []
-    for dataset in datasets:
-        metric_values = [data[model][dataset][metric] for model in models]
-        all_metric_values.extend(metric_values)
+        # Set x-axis labels (model names)
+        ax.set_xticks(x)
+        ax.set_xticklabels(models, rotation=0, ha='center', fontsize=12)  # Increased font size for better readability
 
-    # Calculate the minimum and maximum values
-    min_val = min(all_metric_values)
-    max_val = max(all_metric_values)
+        # Set y-axis limits based on data
+        ax.set_ylim(0, 1.05)  # Assuming all metrics are between 0 and 1
 
-    # Calculate a 10% margin
-    y_margin = (max_val - min_val) * 0.1 if (max_val - min_val) != 0 else 0.05
-
-    # Set the dynamic y-axis limits with the margin
-    ax.set_ylim(min_val - y_margin, max_val + y_margin)
-
-
-
-    # Add grid
-    ax.grid(True, linestyle='--', axis='y', alpha=0.7)
+        # Add grid for better readability
+        ax.grid(True, linestyle='--', axis='y', alpha=0.7)
 
 # Add a single common legend
-handles = [plt.Line2D([0], [0], color=color, lw=4) for color in colors.values()]
-fig.legend(handles, dataset_labels, loc='upper center', ncol=len(colors))
+handles = [plt.Rectangle((0,0),1,1, color=colors[dataset]) for dataset in datasets]
+fig.legend(handles, dataset_labels, loc='upper center', ncol=len(colors), fontsize=14)
 
-# Adjust layout
+# Adjust layout to prevent overlap and ensure adequate spacing
 plt.tight_layout(rect=[0, 0, 1, 0.95])  # Adjust top spacing for the legend
-plt.savefig('Results/plot_bce.png', dpi=400)
-plt.show()
 
+# Save the figure
+plt.savefig('Results/plot_combined.png', dpi=400)
+
+# Show the plot
+# plt.show()

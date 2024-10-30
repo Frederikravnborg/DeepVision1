@@ -8,11 +8,11 @@ import matplotlib.pyplot as plt
 import random
 
 
-PH2_path = '/dtu/datasets1/02516/PH2_Dataset_images/'
-# PH2_path = '/Users/fredmac/Documents/DTU-FredMac/Deep Vision/Poster 2/PH2_Dataset_images/'
+# PH2_path = '/dtu/datasets1/02516/PH2_Dataset_images/'
+PH2_path = '/Users/fredmac/Documents/DTU-FredMac/Deep Vision/Poster 2/PH2_Dataset_images/'
 
-DRIVE_path = '/dtu/datasets1/02516/DRIVE/training'
-# DRIVE_path = '/Users/fredmac/Documents/DTU-FredMac/Deep Vision/Poster 2/DRIVE/training'
+# DRIVE_path = '/dtu/datasets1/02516/DRIVE/training'
+DRIVE_path = '/Users/fredmac/Documents/DTU-FredMac/Deep Vision/Poster 2/DRIVE/training'
 
 class DRIVE(torch.utils.data.Dataset):
     def __init__(self ,transform, data_path=DRIVE_path):
