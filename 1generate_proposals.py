@@ -53,18 +53,6 @@ def parse_annotation(xml_file):
         print(f"Unexpected error parsing {xml_file}: {e}")
         return []
 
-# def resize_image(image, max_width=800, max_height=800):
-#     """
-#     Resizes an image to fit within max_width and max_height while maintaining aspect ratio.
-#     """
-#     height, width = image.shape[:2]
-#     scaling_factor = min(max_width / width, max_height / height, 1)  # Prevent upscaling
-
-#     if scaling_factor < 1:
-#         new_size = (int(width * scaling_factor), int(height * scaling_factor))
-#         resized_image = cv2.resize(image, new_size, interpolation=cv2.INTER_AREA)
-#         return resized_image
-#     return image
 
 def save_object_proposals(proposals, filepath):
     """
@@ -104,9 +92,6 @@ def extract_selective_search_proposals(image_path, ss, max_width=800, max_height
     if image is None:
         print(f"Failed to read image: {image_path}")
         return []
-    
-    # Resize image
-    # resized_image = resize_image(image, max_width, max_height)
     
     # Set base image
     ss.setBaseImage(image)
