@@ -16,6 +16,13 @@ import cv2
 from torchvision.ops import nms
 from sklearn.metrics import precision_recall_curve, average_precision_score
 
+
+# For Gradcam
+from pytorch_grad_cam import GradCAM
+from pytorch_grad_cam.utils.image import show_cam_on_image
+from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
+import matplotlib.pyplot as plt
+
 # ===============================
 # Configuration and Parameters
 # ===============================
@@ -153,7 +160,7 @@ def main():
     # Store all detections and ground truths
     all_detections = []
     all_gt_boxes = []
-    
+    gradcam_count = 0
     print("\nProcessing test images...\n")
     for xml_filename in tqdm(test_files, desc="Test Images"):
         base_filename = os.path.splitext(xml_filename)[0]
@@ -202,6 +209,7 @@ def main():
                 outputs = model(inputs)
                 probs = nn.functional.softmax(outputs, dim=1)
                 scores, preds = torch.max(probs, dim=1)
+            # Optionally visualize proposals
             
             # Collect detections
             for i in range(len(batch_proposals)):
@@ -238,6 +246,25 @@ def main():
                     gt['ymax']
                 ]
             })
+        # After NMS, visualize detections with GradCAM
+        if nms_detections:
+            # Create visualizations directory if it doesn't exist
+            if gradcam_count < 10:
+                gradcam_count += 1
+                vis_dir = os.path.join(DATASET_DIR, 'visualizations')
+                os.makedirs(vis_dir, exist_ok=True)
+                
+                # Visualize all detections in a grid
+                output_path = os.path.join(vis_dir, f'{base_filename}_gradcam_all.png')
+                visualize_all_detections(
+                    image_path,
+                    nms_detections,
+                    model,
+                    transform,
+                    device,
+                    output_path
+                )
+            
     
     # Evaluate detections using AP metric
     print("\nEvaluating detections...\n")
@@ -308,6 +335,92 @@ def compute_iou_bbox(det_bbox, gt_bbox):
     
     iou = intersection_area / float(det_area + gt_area - intersection_area)
     return iou
+
+def visualize_all_detections(image_path, detections, model, transform, device, output_path=None, max_dets=10):
+    """
+    Visualize multiple detections with GradCAM in a grid.
+    """
+    # Load and prepare image
+    original_image = Image.open(image_path).convert('RGB')
+    image_np = np.array(original_image)
+    
+    # Initialize GradCAM
+    target_layers = [model.layer4[-1]]
+    cam = GradCAM(model=model, target_layers=target_layers)
+    
+    # Sort detections by confidence
+    sorted_dets = sorted(detections, key=lambda x: x['score'], reverse=True)[:max_dets]
+    num_dets = len(sorted_dets)
+    
+    if num_dets == 0:
+        return
+    
+    # Create figure
+    rows = (num_dets + 2) // 3
+    cols = min(4, num_dets + 1)
+    fig, axes = plt.subplots(rows, cols, figsize=(5*cols, 5*rows))
+    if rows == 1:
+        axes = [axes]
+    axes = np.array(axes).ravel()
+    # Show original image with all bboxes
+    axes[0].imshow(image_np)
+    for det in sorted_dets:
+        bbox = det['bbox']
+        rect = plt.Rectangle((bbox[0], bbox[1]), 
+                           bbox[2] - bbox[0],
+                           bbox[3] - bbox[1],
+                           fill=False, color='red', linewidth=2)
+        axes[0].add_patch(rect)
+        axes[0].text(bbox[0], bbox[1]-5, f"{det['score']:.2f}", 
+                    color='red', fontsize=10, backgroundcolor='white')
+    axes[0].set_title('All Detections')
+    axes[0].axis('off')
+    
+    # Process each detection
+    for idx, det in enumerate(sorted_dets, 1):
+        bbox = det['bbox']
+        cropped_image = original_image.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
+        
+        # Keep original size for visualization
+        original_size = cropped_image.size
+        
+        # Transform for model
+        input_tensor = transform(cropped_image).unsqueeze(0).to(device)
+        
+        # Create target
+        targets = [ClassifierOutputTarget(1)]
+        
+        # Generate GradCAM
+        grayscale_cam = cam(input_tensor=input_tensor, targets=targets)
+        grayscale_cam = grayscale_cam[0]
+        
+        # Resize grayscale_cam to match original crop size
+        grayscale_cam = cv2.resize(grayscale_cam, (original_size[0], original_size[1]))
+        
+        # Convert crop to RGB numpy array
+        rgb_img = np.array(cropped_image) / 255.0
+        
+        # Overlay GradCAM on image
+        visualization = show_cam_on_image(rgb_img, grayscale_cam, use_rgb=True)
+        
+        # Plot visualization
+        axes[idx].imshow(visualization)
+        axes[idx].set_title(f'Detection {idx} (conf: {det["score"]:.3f})')
+        axes[idx].axis('off')
+    
+    # Turn off any unused subplots
+    for idx in range(num_dets + 1, len(axes)):
+        axes[idx].axis('off')
+    
+    # Adjust layout
+    plt.tight_layout()
+    
+    # Save or show
+    if output_path:
+        plt.savefig(output_path, bbox_inches='tight', dpi=300)
+        plt.close()
+    else:
+        plt.show()
 
 if __name__ == "__main__":
     main()
