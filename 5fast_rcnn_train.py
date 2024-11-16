@@ -135,8 +135,9 @@ def train_model(model, dataloader, optimizer, num_epochs=10):
             labels = labels.to(device)
             bboxes = bboxes.to(device)
 
-            # Convert to RoI format
-            rois = [torch.cat((torch.tensor([i], dtype=torch.float32), bbox.unsqueeze(0))) for i, bbox in enumerate(bboxes)]
+            # Convert to RoI format and ensure all tensors are on the correct device
+            rois = [torch.cat((torch.tensor([i], dtype=torch.float32, device=device), bbox.unsqueeze(0))) for i, bbox in enumerate(bboxes)]
+
 
             optimizer.zero_grad()
 
