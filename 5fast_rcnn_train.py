@@ -213,13 +213,14 @@ def evaluate_model(model, dataloader):
     return classification_accuracy
 
 
-def visualize_samples(model, dataset, ground_truths, num_samples=5):
+def visualize_samples(model, dataset, image_dir, ground_truths, num_samples=5):
     """
     Visualizes a few samples from the dataset with ground truth and model predictions.
 
     Args:
         model: Trained PyTorch Fast R-CNN model.
         dataset: The dataset to sample images from.
+        image_dir: The directory where the images are stored.
         ground_truths: Dictionary of ground truth boxes.
         num_samples: Number of samples to visualize.
     """
@@ -230,7 +231,7 @@ def visualize_samples(model, dataset, ground_truths, num_samples=5):
         image, bbox, label, image_filename = dataset[idx]
 
         # Load original image
-        image_path = os.path.join(dataset.image_dir, image_filename)
+        image_path = os.path.join(image_dir, image_filename)
         original_image = Image.open(image_path).convert('RGB')
 
         # Prepare image for model input
@@ -283,6 +284,7 @@ def visualize_samples(model, dataset, ground_truths, num_samples=5):
             ax.text(gt['xmin'], gt['ymin'] - 5, 'Ground Truth', color='green', fontsize=12, weight='bold')
 
         plt.show()
+
 
 def refine_bbox(original_bbox, deltas):
     """
@@ -381,7 +383,8 @@ def main():
 
     # Visualize some samples
     print("\nVisualizing Sample Predictions...\n")
-    visualize_samples(model, val_dataset, ground_truths, num_samples=5)
+    visualize_samples(model, val_dataset, ANNOTATED_IMAGES_DIR, ground_truths, num_samples=5)
+
 
 
     # Save the trained model
