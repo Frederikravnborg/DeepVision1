@@ -136,6 +136,18 @@ def compute_loss(class_logits, bbox_deltas, labels, gt_bboxes):
 # ===============================
 
 def train_model(model, dataloader, optimizer, num_epochs=10):
+    """
+    Trains the Fast R-CNN model.
+    
+    Args:
+        model: The model to be trained.
+        dataloader: DataLoader for the training dataset.
+        optimizer: The optimizer for training.
+        num_epochs: Number of epochs to train.
+
+    Returns:
+        model: The trained model.
+    """
     model.train()
     for epoch in range(num_epochs):
         running_loss = 0.0
@@ -144,6 +156,7 @@ def train_model(model, dataloader, optimizer, num_epochs=10):
             labels = labels.to(device)
             bboxes = bboxes.to(device)
 
+            # Convert bounding boxes to RoI format
             rois = torch.stack([
                 torch.cat([torch.tensor([i], dtype=torch.float32, device=device), bbox]) 
                 for i, bbox in enumerate(bboxes)
@@ -151,15 +164,25 @@ def train_model(model, dataloader, optimizer, num_epochs=10):
 
             optimizer.zero_grad()
 
+            # Forward pass
             class_logits, bbox_deltas = model(images, rois)
+
+            # Compute the loss
             loss = compute_loss(class_logits, bbox_deltas, labels, bboxes)
 
+            # Backward pass and optimization
             loss.backward()
             optimizer.step()
+
             running_loss += loss.item()
 
+        # Print average loss for the current epoch
         avg_loss = running_loss / len(dataloader)
         print(f"Epoch {epoch+1}/{num_epochs}, Loss: {avg_loss:.4f}")
+
+    # Return the trained model
+    return model
+
 
 
 
@@ -350,7 +373,7 @@ def main():
 
     # Train the model
     print("\nStarting Training...\n")
-    train_model(model, train_loader, optimizer, num_epochs=NUM_EPOCHS)
+    model = train_model(model, train_loader, optimizer, num_epochs=NUM_EPOCHS)
 
     # Evaluate the model
     print("\nEvaluating Model on Validation Set...\n")
@@ -358,7 +381,8 @@ def main():
 
     # Visualize some samples
     print("\nVisualizing Sample Predictions...\n")
-    visualize_samples(model, val_dataset, used_dataset, full_dataset, ground_truths, num_samples=5)
+    visualize_samples(model, val_dataset, ground_truths, num_samples=5)
+
 
     # Save the trained model
     MODEL_SAVE_PATH = os.path.join(DATASET_DIR, 'fast_rcnn_model.pth')
