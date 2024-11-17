@@ -138,6 +138,10 @@ def compute_loss(class_logits, labels):
 # Train Function
 # ===============================
 
+# ===============================
+# Train Function
+# ===============================
+
 def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=10):
     """
     Trains the Fast R-CNN model.
@@ -161,8 +165,8 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=1
 
             optimizer.zero_grad()
 
-            # Extract proposals from targets (assuming proposals are included in your dataset)
-            proposals = [target['proposals'] for target in labels]  # Assuming proposals are included in the labels
+            # Extract proposals (bounding boxes) from the dataset, not from the labels
+            proposals = [proposal['bbox'] for proposal in labels]  # Each label contains proposals
 
             # Forward pass
             class_logits = model(images, proposals)
@@ -186,6 +190,7 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=1
 
     # Return the trained model
     return model
+
 
 
 # ===============================
