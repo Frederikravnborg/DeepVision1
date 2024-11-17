@@ -68,12 +68,6 @@ class ProposalDataset(Dataset):
     Custom Dataset for Object Proposals.
     """
     def __init__(self, annotations, image_dir, transform=None):
-        """
-        Args:
-            annotations (list): List of annotation dictionaries containing 'image_filename', 'bbox' (proposal), 'label' (class).
-            image_dir (str): Directory with all the images.
-            transform (callable, optional): Optional transform to be applied on a sample.
-        """
         self.annotations = annotations
         self.image_dir = image_dir
         self.transform = transform
@@ -87,25 +81,22 @@ class ProposalDataset(Dataset):
         bbox = annotation['bbox']  # Proposals
         label = annotation['label']  # Class label
 
-        # Ensure that the bounding box is in the correct format (list or tuple)
         if isinstance(bbox, dict):
-            # If bbox is a dictionary, extract the relevant values (assuming it's a dict with keys 'xmin', 'ymin', 'xmax', 'ymax')
             bbox = [bbox['xmin'], bbox['ymin'], bbox['xmax'], bbox['ymax']]
 
-        # Load image
         image_path = os.path.join(self.image_dir, image_filename)
         image = Image.open(image_path).convert('RGB')
 
-        # Apply transforms if available
         if self.transform:
             image = self.transform(image)
 
-        # Create the target dictionary in the format that Fast-RCNN expects
-        target = {}
-        target['boxes'] = torch.tensor([bbox], dtype=torch.float32)  # Proposal boxes
-        target['labels'] = torch.tensor([label], dtype=torch.int64)  # Corresponding labels
+        target = {
+            'boxes': torch.tensor([bbox], dtype=torch.float32),
+            'labels': torch.tensor([label], dtype=torch.int64)
+        }
 
         return image, target
+
 
 
 
@@ -138,9 +129,6 @@ def inference_fast_rcnn(model, image, proposals):
 # ===============================
 
 def train_model(model, criterion, optimizer, dataloader, dataset_size, num_epochs=10):
-    """
-    Trains the model.
-    """
     model.train()
 
     for epoch in range(num_epochs):
@@ -150,16 +138,15 @@ def train_model(model, criterion, optimizer, dataloader, dataset_size, num_epoch
             inputs = inputs.to(device)
             targets = {key: value.to(device) for key, value in targets.items()}
 
-            # Zero the parameter gradients
+            # Debugging: Check targets structure
+            print(f"Targets type: {type(targets)}, keys: {list(targets.keys())}")
+
             optimizer.zero_grad()
 
-            # Forward pass
             loss_dict = model(inputs, targets)
 
-            # Get total loss from all parts
             losses = sum(loss for loss in loss_dict.values())
 
-            # Backward pass and optimize
             losses.backward()
             optimizer.step()
 
@@ -169,6 +156,7 @@ def train_model(model, criterion, optimizer, dataloader, dataset_size, num_epoch
         print(f'Epoch {epoch+1}/{num_epochs}, Loss: {epoch_loss:.4f}')
 
     return model
+
 
 # ===============================
 # Task 4: Evaluate the Model
