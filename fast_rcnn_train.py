@@ -82,7 +82,6 @@ class FastRCNN(nn.Module):
         self.classifier = nn.Sequential(
             nn.Linear(512 * 7 * 7, 1024),  # Size of features from ResNet-18
             nn.ReLU(),
-            nn.Dropout(0.5),
             nn.Linear(1024, num_classes)  # Output classes for object detection (including background)
         )
 
@@ -196,6 +195,8 @@ def main():
         combined_data = pickle.load(f)
     proposals = combined_data['proposals']
     ground_truths = combined_data['ground_truths']
+    print(proposals[1])
+    print(ground_truths[1])
     print(f'Total Proposals Loaded: {len(proposals)}')
 
     # Define transforms
