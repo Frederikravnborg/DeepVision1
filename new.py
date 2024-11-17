@@ -48,17 +48,25 @@ print(f'Using device: {device}')
 class FastRCNNModel(nn.Module):
     def __init__(self, num_classes):
         super(FastRCNNModel, self).__init__()
+        # Load a pre-trained ResNet model as the backbone
+        self.backbone = models.resnet50(weights='DEFAULT')
+        self.backbone = nn.Sequential(*list(self.backbone.children())[:-2])  # Remove fully connected layer
+        
+        # Specify the feature maps to use
+        self.featmap_names = ['0']  # Use feature map from the last layer before AvgPool
+        
+        # Create an ROI Pooling layer
+        self.roi_pooling = MultiScaleRoIAlign(
+            featmap_names=self.featmap_names,
+            output_size=(7, 7),
+            sampling_ratio=2
+        )
+        
+        # Define the classification and regression heads
+        self.classifier = nn.Linear(2048 * 7 * 7, 1024)
+        self.cls_score = nn.Linear(1024, num_classes)
+        self.bbox_pred = nn.Linear(1024, num_classes * 4)
 
-        # Backbone model (ResNet-18)
-        self.backbone = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-        self.backbone = nn.Sequential(*list(self.backbone.children())[:-2])  # Remove fully connected layers
-
-        # RoI pooling
-        self.roi_pooling = MultiScaleRoIAlign(output_size=(7, 7), sampling_ratio=2)
-
-        # Classification and Bounding Box Regression layers
-        self.cls_fc = nn.Linear(512 * 7 * 7, num_classes)
-        self.bbox_fc = nn.Linear(512 * 7 * 7, 4)  # 4 for bounding box (xmin, ymin, xmax, ymax)
 
     def forward(self, images, proposals):
         # images: batch of images
