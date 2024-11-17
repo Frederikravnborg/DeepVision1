@@ -10,12 +10,13 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, random_split, Subset
 from torchvision import models, transforms
 from torchvision.models.detection import FasterRCNN
-from torchvision.models.detection.rpn import AnchorGenerator
 from torchvision.models.detection import FasterRCNN
 from PIL import Image
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import numpy as np
+from torchvision.models.detection.backbone_utils import resnet_fpn_backbone
+
 
 # ===============================
 # Configuration and Parameters
@@ -44,12 +45,18 @@ print(f'Using device: {device}')
 # Task 1: Build the Fast-RCNN Model
 # ===============================
 
-def build_model(num_classes):
-    """
-    Builds a pre-trained Faster-RCNN model with custom number of classes.
-    """
-    model = FasterRCNN(backbone=models.resnet18(weights='IMAGENET1K_V1').features, 
-                       num_classes=num_classes)
+def build_fast_rcnn_model(num_classes):
+    # Use a pretrained ResNet backbone, without RPN
+    backbone = resnet_fpn_backbone('resnet18', pretrained=True)
+    
+    # We will need a RoIAlign layer for Fast-RCNN, which requires the proposals
+    model = FasterRCNN(
+        backbone,
+        num_classes=num_classes,
+        rpn_anchor_generator=None,   # No RPN (for Fast-RCNN)
+        box_roi_pool=None            # RoI Align pooling layer
+    )
+    
     return model
 
 # ===============================
@@ -63,7 +70,7 @@ class ProposalDataset(Dataset):
     def __init__(self, annotations, image_dir, transform=None):
         """
         Args:
-            annotations (list): List of annotation dictionaries.
+            annotations (list): List of annotation dictionaries containing 'image_filename', 'bbox' (proposal), 'label' (class).
             image_dir (str): Directory with all the images.
             transform (callable, optional): Optional transform to be applied on a sample.
         """
@@ -77,8 +84,8 @@ class ProposalDataset(Dataset):
     def __getitem__(self, idx):
         annotation = self.annotations[idx]
         image_filename = annotation['image_filename']
-        bbox = annotation['bbox']
-        label = annotation['label']
+        bbox = annotation['bbox']  # Proposals
+        label = annotation['label']  # Class label
 
         # Load image
         image_path = os.path.join(self.image_dir, image_filename)
@@ -88,21 +95,37 @@ class ProposalDataset(Dataset):
         if self.transform:
             image = self.transform(image)
 
-        # Create the target dictionary in the format that FasterRCNN expects
+        # Create the target dictionary in the format that Fast-RCNN expects
         target = {}
-        target['boxes'] = torch.tensor([bbox], dtype=torch.float32)
-        target['labels'] = torch.tensor([label], dtype=torch.int64)
+        target['boxes'] = torch.tensor([bbox], dtype=torch.float32)  # Proposal boxes
+        target['labels'] = torch.tensor([label], dtype=torch.int64)  # Corresponding labels
 
         return image, target
+
 
 def load_data(training_data_file):
     """
     Loads the training data from a pickle file.
     """
     with open(training_data_file, 'rb') as f:
-        data = pickle.load(f)
-    annotations = data['annotations']  # Assuming 'annotations' contains the bounding box info
-    return annotations
+        combined_data = pickle.load(f)
+    
+    # Ensure we're accessing the correct keys
+    proposals = combined_data.get('proposals', [])
+    ground_truths = combined_data.get('ground_truths', [])
+    
+    return proposals, ground_truths
+
+
+def inference_fast_rcnn(model, image, proposals):
+    model.eval()
+    with torch.no_grad():
+        # Pass image and proposals to the model
+        target = {'boxes': proposals, 'labels': torch.ones(len(proposals), dtype=torch.int64)}  # Dummy labels
+        prediction = model([image.to(device)], [target])
+    
+    return prediction
+
 
 # ===============================
 # Task 3: Train the Model
@@ -171,48 +194,6 @@ def evaluate_model(model, dataloader):
     print(f'Validation Accuracy: {accuracy * 100:.2f}%')
     return accuracy
 
-# ===============================
-# Visualization Function
-# ===============================
-
-def visualize_samples(model, dataset, num_samples=5):
-    """
-    Visualizes a few samples from the dataset with ground truth and predictions.
-
-    Args:
-        model: Trained PyTorch model.
-        dataset: Dataset for visualization.
-        num_samples: Number of samples to visualize.
-    """
-    model.eval()
-    samples = random.sample(range(len(dataset)), num_samples)
-
-    for idx in samples:
-        image, target = dataset[idx]
-        image_np = image.cpu().numpy().transpose(1, 2, 0)
-        image_np = np.clip(image_np, 0, 1)
-
-        # Forward pass
-        with torch.no_grad():
-            prediction = model([image.to(device)])
-
-        # Get the predicted boxes and labels
-        predicted_boxes = prediction[0]['boxes'].cpu().numpy()
-        predicted_labels = prediction[0]['labels'].cpu().numpy()
-
-        # Plot the image
-        fig, ax = plt.subplots(1, figsize=(6, 6))
-        ax.imshow(image_np)
-        ax.axis('off')
-
-        # Draw predicted boxes
-        for box, label in zip(predicted_boxes, predicted_labels):
-            rect = patches.Rectangle((box[0], box[1]), box[2] - box[0], box[3] - box[1],
-                                     linewidth=2, edgecolor='red', facecolor='none')
-            ax.add_patch(rect)
-            ax.text(box[0], box[1], f'Class: {label}', color='red')
-
-        plt.show()
 
 # ===============================
 # Main Execution
@@ -225,8 +206,8 @@ def main():
     np.random.seed(RANDOM_SEED)
 
     # Load data
-    annotations = load_data(TRAINING_DATA_FILE)
-    print(f'Total Annotations Loaded: {len(annotations)}')
+    proposals, ground_truths = load_data(TRAINING_DATA_FILE)
+    print(f'Total Annotations Loaded: {len(proposals)}')
 
     # Define transforms
     transform = transforms.Compose([
@@ -235,7 +216,7 @@ def main():
     ])
 
     # Create dataset
-    dataset = ProposalDataset(annotations, ANNOTATED_IMAGES_DIR, transform=transform)
+    dataset = ProposalDataset(proposals, ANNOTATED_IMAGES_DIR, transform=transform)
 
     # Split into training and validation sets
     dataset_size = len(dataset)
@@ -250,7 +231,7 @@ def main():
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
 
     # Build the model
-    model = build_model(NUM_CLASSES)
+    model = build_fast_rcnn_model(NUM_CLASSES)
     model = model.to(device)
 
     # Define Loss and Optimizer
@@ -264,12 +245,8 @@ def main():
     print("\nEvaluating Model on Validation Set...\n")
     accuracy = evaluate_model(model, val_loader)
 
-    # Visualize some samples
-    #print("\nVisualizing Sample Predictions...\n")
-    #visualize_samples(model, val_dataset, num_samples=5)
-
     # Save the trained model
-    MODEL_SAVE_PATH = os.path.join(DATASET_DIR, 'faster_rcnn_resnet18.pth')
+    MODEL_SAVE_PATH = os.path.join(DATASET_DIR, 'fast_rcnn_resnet18.pth')
     torch.save(model.state_dict(), MODEL_SAVE_PATH)
     print(f'\nModel saved to {MODEL_SAVE_PATH}')
 
