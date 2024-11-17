@@ -122,8 +122,12 @@ class FastRCNN(nn.Module):
                 else:
                     print(f"Skipping invalid proposal: {proposal}")
         
+        # Convert to a tensor of shape [num_proposals, 5]
         roi_boxes = torch.tensor(roi_boxes, dtype=torch.float32).to(device)
+        
+        # Ensure the shape is correct for ROI pooling: [K, 5] where K is the number of proposals
         print(f"RoI Boxes Shape: {roi_boxes.shape}")
+        assert roi_boxes.ndimension() == 2 and roi_boxes.size(1) == 5, f"Expected roi_boxes of shape [K, 5], got {roi_boxes.shape}"
         
         # Apply RoI Pooling
         pooled_features = self.roi_pool(feature_maps, roi_boxes)
@@ -137,6 +141,7 @@ class FastRCNN(nn.Module):
         print(f"Class Logits Shape: {class_logits.shape}")
 
         return class_logits
+
 
 
 
