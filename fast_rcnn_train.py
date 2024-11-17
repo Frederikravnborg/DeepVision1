@@ -16,6 +16,7 @@ import cv2
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from torchvision.models import ResNet18_Weights
+from torchvision import models
 
 # ===============================
 # Configuration and Parameters
@@ -30,9 +31,9 @@ TRAINING_DATA_FILE = os.path.join(DATASET_DIR, 'training_data_with_gt.pkl')
 NUM_CLASSES = 2  # 1 object class + 1 background
 BATCH_SIZE = 4
 NUM_EPOCHS = 10
-LEARNING_RATE = 0.001
+LEARNING_RATE = 0.0001
 VALIDATION_SPLIT = 0.2
-RANDOM_SEED = 42
+RANDOM_SEED = 43
 
 USE_FULL_DATA = True  # Set to True to use the full dataset, False to use 5%
 
@@ -77,11 +78,6 @@ class FastRCNNDataset(Dataset):
 # ===============================
 # Task 2: Fast R-CNN Model
 # ===============================
-
-import torch
-import torch.nn as nn
-from torchvision import models
-from torchvision.ops import roi_pool
 
 class FastRCNN(nn.Module):
     def __init__(self, num_classes=2):
@@ -133,10 +129,27 @@ class FastRCNN(nn.Module):
 # Task 3: Loss Function
 # ===============================
 
-def compute_loss(class_logits, bbox_deltas, labels, gt_bboxes):
-    classification_loss = nn.CrossEntropyLoss()(class_logits, labels)
+def compute_loss(class_logits, bbox_deltas, labels, gt_bboxes, class_weights=None):
+    # Classification loss with class weights (if provided)
+    classification_loss = nn.CrossEntropyLoss(weight=class_weights)(class_logits, labels)
+    
+    # Bounding box regression loss
     bbox_regression_loss = nn.SmoothL1Loss()(bbox_deltas, gt_bboxes)
+    
     return classification_loss + bbox_regression_loss
+
+# Example: Calculate class weights based on class frequencies
+def compute_class_weights(labels):
+    # Get the frequency of each class (0 for background, 1 for object)
+    class_counts = torch.bincount(labels)
+    
+    # Total number of samples
+    total_samples = labels.size(0)
+    
+    # Inverse frequency as weights: higher weight for less frequent classes
+    class_weights = total_samples / (len(class_counts) * class_counts.float())
+    
+    return class_weights
 
 
 # ===============================
@@ -164,6 +177,9 @@ def train_model(model, dataloader, optimizer, num_epochs=10):
             labels = labels.to(device)
             bboxes = bboxes.to(device)
 
+            # Compute class weights for the current batch
+            class_weights = compute_class_weights(labels)
+
             # Convert bounding boxes to RoI format
             rois = torch.stack([
                 torch.cat([torch.tensor([i], dtype=torch.float32, device=device), bbox]) 
@@ -176,7 +192,8 @@ def train_model(model, dataloader, optimizer, num_epochs=10):
             class_logits, bbox_deltas = model(images, rois)
 
             # Compute the loss
-            loss = compute_loss(class_logits, bbox_deltas, labels, bboxes)
+            loss = compute_loss(class_logits, bbox_deltas, labels, bboxes, class_weights)
+
 
             # Backward pass and optimization
             loss.backward()
@@ -219,108 +236,6 @@ def evaluate_model(model, dataloader):
     classification_accuracy = correct_classifications / total_classifications if total_classifications > 0 else 0
     print(f'Validation Classification Accuracy: {classification_accuracy * 100:.2f}%')
     return classification_accuracy
-
-
-def visualize_samples(model, dataset, image_dir, ground_truths, num_samples=5):
-    """
-    Visualizes a few samples from the dataset with ground truth and model predictions.
-
-    Args:
-        model: Trained PyTorch Fast R-CNN model.
-        dataset: The dataset to sample images from.
-        image_dir: The directory where the images are stored.
-        ground_truths: Dictionary of ground truth boxes.
-        num_samples: Number of samples to visualize.
-    """
-    model.eval()
-    samples = random.sample(range(len(dataset)), num_samples)
-
-    for idx in samples:
-        image, bbox, label, image_filename = dataset[idx]
-
-        # Load original image
-        image_path = os.path.join(image_dir, image_filename)
-        original_image = Image.open(image_path).convert('RGB')
-
-        # Prepare image for model input
-        image = image.unsqueeze(0).to(device)  # Add batch dimension
-
-        # Forward pass through the model to get predictions
-        with torch.no_grad():
-            feature_maps = model.backbone(image)
-            
-            # Convert bbox tensor to RoI format
-            roi = torch.tensor([[0, bbox[0], bbox[1], bbox[2], bbox[3]]], dtype=torch.float32).to(device)
-            pooled_features = model.roi_pool(feature_maps, roi, output_size=(7, 7))
-            pooled_features = pooled_features.view(pooled_features.size(0), -1)
-            
-            class_logits, bbox_deltas = model.classifier(pooled_features), model.regressor(pooled_features)
-
-            # Get predicted class
-            _, predicted_class = torch.max(class_logits, 1)
-            predicted_class = predicted_class.item()
-
-            # Apply bbox regression to refine the predicted box
-            bbox_deltas = bbox_deltas.squeeze().cpu().numpy()
-            refined_bbox = refine_bbox(bbox.cpu().numpy(), bbox_deltas)
-
-        # Convert image for plotting
-        original_image_np = np.array(original_image)
-
-        # Plot the image
-        fig, ax = plt.subplots(1, figsize=(8, 8))
-        ax.imshow(original_image_np)
-        ax.axis('off')
-        
-        # Draw predicted bounding box
-        pred_rect = patches.Rectangle((refined_bbox[0], refined_bbox[1]),
-                                      refined_bbox[2] - refined_bbox[0],
-                                      refined_bbox[3] - refined_bbox[1],
-                                      linewidth=2, edgecolor='red', facecolor='none')
-        ax.add_patch(pred_rect)
-        ax.text(refined_bbox[0], refined_bbox[1] - 5, f'Pred: {"Object" if predicted_class == 1 else "Background"}',
-                color='red', fontsize=12, weight='bold')
-        
-        # Draw ground truth boxes (if available)
-        gt_boxes = ground_truths.get(image_filename, [])
-        for gt in gt_boxes:
-            gt_rect = patches.Rectangle((gt['xmin'], gt['ymin']),
-                                        gt['xmax'] - gt['xmin'],
-                                        gt['ymax'] - gt['ymin'],
-                                        linewidth=2, edgecolor='green', facecolor='none')
-            ax.add_patch(gt_rect)
-            ax.text(gt['xmin'], gt['ymin'] - 5, 'Ground Truth', color='green', fontsize=12, weight='bold')
-
-        plt.show()
-
-
-def refine_bbox(original_bbox, deltas):
-    """
-    Applies bounding box deltas to refine the original bounding box.
-    """
-    x_min, y_min, x_max, y_max = original_bbox
-    dx, dy, dw, dh = deltas
-
-    # Compute the center, width, and height of the original bbox
-    width = x_max - x_min
-    height = y_max - y_min
-    center_x = x_min + 0.5 * width
-    center_y = y_min + 0.5 * height
-
-    # Apply deltas
-    refined_center_x = center_x + dx * width
-    refined_center_y = center_y + dy * height
-    refined_width = np.exp(dw) * width
-    refined_height = np.exp(dh) * height
-
-    # Convert back to corner coordinates
-    refined_x_min = refined_center_x - 0.5 * refined_width
-    refined_y_min = refined_center_y - 0.5 * refined_height
-    refined_x_max = refined_center_x + 0.5 * refined_width
-    refined_y_max = refined_center_y + 0.5 * refined_height
-
-    return [refined_x_min, refined_y_min, refined_x_max, refined_y_max]
-
 
 
 # ===============================
@@ -388,12 +303,6 @@ def main():
     # Evaluate the model
     print("\nEvaluating Model on Validation Set...\n")
     evaluate_model(model, val_loader)
-
-    # Visualize some samples
-    print("\nVisualizing Sample Predictions...\n")
-    visualize_samples(model, val_dataset, ANNOTATED_IMAGES_DIR, ground_truths, num_samples=5)
-
-
 
     # Save the trained model
     MODEL_SAVE_PATH = os.path.join(DATASET_DIR, 'fast_rcnn_model.pth')
