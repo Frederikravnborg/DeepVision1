@@ -101,10 +101,12 @@ class FastRCNN(nn.Module):
         roi_boxes = []
         for i, proposal_list in enumerate(proposals):
             for proposal in proposal_list:
-                xmin, ymin, xmax, ymax = proposal['bbox']
-                print(f"Proposal bbox: {proposal['bbox']}")
+                # Convert bbox values to floats explicitly
+                xmin, ymin, xmax, ymax = map(float, proposal['bbox'])
+                print(f"proposal bbox: {proposal['bbox']}, Types: {[type(coord) for coord in proposal['bbox']]}")
                 roi_boxes.append([i, xmin, ymin, xmax, ymax])
         roi_boxes = torch.tensor(roi_boxes, dtype=torch.float32).to(device)
+
         
         # Apply RoI Pooling
         pooled_features = self.roi_pool(feature_maps, roi_boxes)
