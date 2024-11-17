@@ -55,6 +55,7 @@ class FastRCNNDataset(Dataset):
         proposal = self.proposals[idx]
         image_filename = proposal['image_filename']
         label = proposal['label']
+        bbox = proposal['bbox']  # Assuming each proposal has a 'bbox' field
 
         # Load the image
         image_path = os.path.join(self.image_dir, image_filename)
@@ -64,7 +65,8 @@ class FastRCNNDataset(Dataset):
         if self.transform:
             image = self.transform(image)
 
-        return image, label, image_filename
+        # Return image, label, filename, and proposal (bounding box)
+        return image, label, image_filename, bbox
 
 
 # ===============================
@@ -136,35 +138,27 @@ def compute_loss(class_logits, labels):
 # ===============================
 
 def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=10):
-    """
-    Trains the Fast R-CNN model.
-    
-    Args:
-        model: The model to be trained.
-        train_dataloader: DataLoader for the training dataset.
-        val_dataloader: DataLoader for the validation dataset.
-        optimizer: The optimizer for training.
-        num_epochs: Number of epochs to train.
-
-    Returns:
-        model: The trained model.
-    """
     model.train()
     for epoch in range(num_epochs):
         running_loss = 0.0
-        for images, labels, filenames in tqdm(train_dataloader, desc=f"Training Epoch {epoch+1}/{num_epochs}"):
+        for images, labels, filenames, bboxes in tqdm(train_dataloader, desc=f"Training Epoch {epoch+1}/{num_epochs}"):
             images = images.to(device)
             labels = labels.to(device)
 
-            optimizer.zero_grad()
+            # Prepare proposals in the required format
+            proposals = []
+            for bbox in bboxes:
+                # Convert bbox to proposal format for each image
+                proposals.append([{'bbox': bbox}])
 
-            # Forward pass
-            class_logits = model(images)
+            # Forward pass with images and proposals
+            class_logits = model(images, proposals)
 
             # Compute the loss
             loss = compute_loss(class_logits, labels)
 
             # Backward pass and optimization
+            optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
@@ -178,8 +172,8 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=1
         val_accuracy = evaluate_model(model, val_dataloader)
         print(f"Epoch {epoch+1}/{num_epochs}, Validation Accuracy: {val_accuracy:.4f}")
 
-    # Return the trained model
     return model
+
 
 
 # ===============================
@@ -192,11 +186,17 @@ def evaluate_model(model, dataloader):
     total_classifications = 0
 
     with torch.no_grad():
-        for images, labels, filenames in tqdm(dataloader, desc="Evaluating"):
+        for images, labels, filenames, bboxes in tqdm(dataloader, desc="Evaluating"):
             images = images.to(device)
             labels = labels.to(device)
 
-            class_logits = model(images)
+            # Prepare proposals
+            proposals = []
+            for bbox in bboxes:
+                proposals.append([{'bbox': bbox}])
+
+            # Forward pass
+            class_logits = model(images, proposals)
             _, predicted_classes = torch.max(class_logits, 1)
 
             total_classifications += labels.size(0)
@@ -204,6 +204,7 @@ def evaluate_model(model, dataloader):
 
     classification_accuracy = correct_classifications / total_classifications if total_classifications > 0 else 0
     return classification_accuracy
+
 
 
 # ===============================
@@ -257,6 +258,7 @@ def main():
     # Create DataLoaders
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
+
 
     # Build the Fast R-CNN model
     model = FastRCNN(NUM_CLASSES).to(device)
