@@ -60,9 +60,15 @@ class FastRCNNDataset(Dataset):
         # Extract the proposal (bounding box and label)
         proposal = self.proposals[idx]
         
-        bbox = proposal['bbox']  # {'xmin', 'ymin', 'xmax', 'ymax'}
+        bbox = proposal['bbox']  # This is a dictionary with keys 'xmin', 'ymin', 'xmax', 'ymax'
         label = proposal['label']
         image_filename = proposal['image_filename']
+        
+        # Extract bbox values as a list or tuple [xmin, ymin, xmax, ymax]
+        bbox_values = [bbox['xmin'], bbox['ymin'], bbox['xmax'], bbox['ymax']]
+        
+        # Convert bbox to tensor with batch_id (index of image in batch)
+        bbox = torch.tensor(bbox_values, dtype=torch.float32)  # bbox = [xmin, ymin, xmax, ymax]
         
         # Load the image
         image_path = os.path.join(self.image_dir, image_filename)
@@ -72,11 +78,9 @@ class FastRCNNDataset(Dataset):
         if self.transform:
             image = self.transform(image)
 
-        # Convert bbox to tensor with batch_id (index of image in batch)
-        bbox = torch.tensor(bbox, dtype=torch.float32)  # bbox = [xmin, ymin, xmax, ymax]
-        
         # Return the whole image along with the bounding box and label
         return image, bbox, label
+
 
 
 
