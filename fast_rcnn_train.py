@@ -60,9 +60,13 @@ class FastRCNNDataset(Dataset):
         # Get the proposal for this sample
         proposal = self.proposals[idx]
         
-        bbox = proposal['bbox']  # Proposal bounding box
+        # Get the bounding box and label
+        bbox = proposal['bbox']  # Proposal bounding box (should be a dictionary)
         label = proposal['label']  # Proposal label
         
+        # Convert bbox dict to a tensor
+        bbox_tensor = torch.tensor([bbox['xmin'], bbox['ymin'], bbox['xmax'], bbox['ymax']], dtype=torch.float32)
+
         image_filename = proposal['image_filename']
         
         # Load the image
@@ -73,8 +77,8 @@ class FastRCNNDataset(Dataset):
         if self.transform:
             image = self.transform(image)
 
-        # Return the image, proposal bbox, and proposal label
-        return image, bbox, label
+        # Return the image, proposal bbox tensor, and proposal label
+        return image, bbox_tensor, label
 
 
 # ===============================
@@ -152,11 +156,6 @@ def compute_loss(class_logits, bbox_deltas, class_labels, proposal_bboxes):
     return total_loss
 
 
-
-# ===============================
-# Train Function
-# ===============================
-
 # ===============================
 # Train Function
 # ===============================
@@ -168,7 +167,7 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=1
         for images, bboxes, labels in tqdm(train_dataloader, desc=f"Training Epoch {epoch+1}/{num_epochs}"):
 
             images = images.to(device)
-            bboxes = bboxes.to(device)  # Proposal bounding boxes
+            bboxes = bboxes.to(device)  # Proposal bounding boxes (now tensor)
             labels = labels.to(device)  # Proposal labels
 
             optimizer.zero_grad()
@@ -192,6 +191,7 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=1
         # Evaluate model on validation set
         val_accuracy = evaluate_model(model, val_dataloader)
         print(f"Epoch {epoch+1}/{num_epochs}, Validation Accuracy: {val_accuracy:.4f}")
+
 
 
 
