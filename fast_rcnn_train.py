@@ -15,6 +15,7 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+from torchvision.models import ResNet18_Weights
 
 # ===============================
 # Configuration and Parameters
@@ -77,21 +78,27 @@ class FastRCNNDataset(Dataset):
 # Task 2: Fast R-CNN Model
 # ===============================
 
+import torch
+import torch.nn as nn
+from torchvision import models
+from torchvision.ops import roi_pool
+
 class FastRCNN(nn.Module):
     def __init__(self, num_classes=2):
         super(FastRCNN, self).__init__()
-        self.backbone = models.resnet18(weights='DEFAULT')
-        self.backbone = nn.Sequential(*list(self.backbone.children())[:-2])  # Use all layers except the last two
+        # Load ResNet-18 as the backbone, excluding the last two layers
+        self.backbone = models.resnet18(weights=ResNet18_Weights.DEFAULT)
+        self.backbone = nn.Sequential(*list(self.backbone.children())[:-2])  # Excluding the last two layers
 
         # RoI Pooling layer
         self.roi_pool = roi_pool
 
         # Classification head
         self.classifier = nn.Sequential(
-            nn.Linear(512 * 7 * 7, 1024),
+            nn.Linear(512 * 7 * 7, 1024),  # Size of features from ResNet-18
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(1024, num_classes)
+            nn.Linear(1024, num_classes)  # Output classes for object detection (including background)
         )
         
         # Bounding box regression head
@@ -99,13 +106,13 @@ class FastRCNN(nn.Module):
             nn.Linear(512 * 7 * 7, 1024),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(1024, 4)  # Predicts [dx, dy, dw, dh] adjustments
+            nn.Linear(1024, 4)  # Predicting the bounding box deltas
         )
 
     def forward(self, images, rois):
         feature_maps = self.backbone(images)
         
-        # Convert RoI coordinates to match feature map dimensions
+        # RoI Pooling
         feature_map_height, feature_map_width = feature_maps.shape[2:]
         rois[:, 1:] = rois[:, 1:] * torch.tensor(
             [feature_map_width, feature_map_height, feature_map_width, feature_map_height],
@@ -119,6 +126,7 @@ class FastRCNN(nn.Module):
         bbox_deltas = self.regressor(pooled_features)
 
         return class_logits, bbox_deltas
+
 
 
 # ===============================
