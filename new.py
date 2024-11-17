@@ -87,6 +87,11 @@ class ProposalDataset(Dataset):
         bbox = annotation['bbox']  # Proposals
         label = annotation['label']  # Class label
 
+        # Ensure that the bounding box is in the correct format (list or tuple)
+        if isinstance(bbox, dict):
+            # If bbox is a dictionary, extract the relevant values (assuming it's a dict with keys 'xmin', 'ymin', 'xmax', 'ymax')
+            bbox = [bbox['xmin'], bbox['ymin'], bbox['xmax'], bbox['ymax']]
+
         # Load image
         image_path = os.path.join(self.image_dir, image_filename)
         image = Image.open(image_path).convert('RGB')
@@ -101,6 +106,7 @@ class ProposalDataset(Dataset):
         target['labels'] = torch.tensor([label], dtype=torch.int64)  # Corresponding labels
 
         return image, target
+
 
 
 def load_data(training_data_file):
