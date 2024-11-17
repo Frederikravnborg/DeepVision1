@@ -1,23 +1,20 @@
 import os
-import json
 import pickle
-import random
-from tqdm import tqdm
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import models, transforms
 from torchvision.models import ResNet18_Weights
+from torchvision.ops import RoIPool
 from PIL import Image
 import numpy as np
-import matplotlib.pyplot as plt
+import random
+from tqdm import tqdm
 
 # ===============================
 # Configuration and Parameters
 # ===============================
-
 # Paths
 DATASET_DIR = 'Potholes/'
 ANNOTATED_IMAGES_DIR = os.path.join(DATASET_DIR, 'annotated-images')
@@ -38,7 +35,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f'Using device: {device}')
 
 # ===============================
-# Task 1: Custom Dataset
+# Custom Dataset for Fast R-CNN
 # ===============================
 
 class FastRCNNDataset(Dataset):
@@ -55,7 +52,6 @@ class FastRCNNDataset(Dataset):
         proposal = self.proposals[idx]
         image_filename = proposal['image_filename']
         label = proposal['label']
-        bbox = proposal['bbox']  # Assuming each proposal has a 'bbox' field
 
         # Load the image
         image_path = os.path.join(self.image_dir, image_filename)
@@ -65,15 +61,12 @@ class FastRCNNDataset(Dataset):
         if self.transform:
             image = self.transform(image)
 
-        # Return image, label, filename, and proposal (bounding box)
-        return image, label, image_filename, bbox
+        return image, label, image_filename
 
 
 # ===============================
-# Task 2: Fast R-CNN Model
+# Fast R-CNN Model
 # ===============================
-
-from torchvision.ops import RoIPool
 
 class FastRCNN(nn.Module):
     def __init__(self, num_classes=2, roi_output_size=(7, 7)):
@@ -101,12 +94,19 @@ class FastRCNN(nn.Module):
         roi_boxes = []
         for i, proposal_list in enumerate(proposals):
             for proposal in proposal_list:
-                # Convert bbox values to floats explicitly
-                xmin, ymin, xmax, ymax = map(float, proposal['bbox'])
-                print(f"proposal bbox: {proposal['bbox']}, Types: {[type(coord) for coord in proposal['bbox']]}")
-                roi_boxes.append([i, xmin, ymin, xmax, ymax])
+                bbox = proposal['bbox']
+                # Convert bbox values to float
+                try:
+                    xmin = float(bbox['xmin'])
+                    ymin = float(bbox['ymin'])
+                    xmax = float(bbox['xmax'])
+                    ymax = float(bbox['ymax'])
+                    roi_boxes.append([i, xmin, ymin, xmax, ymax])
+                except KeyError as e:
+                    print(f"Missing key in bbox: {e}")
+                except ValueError as e:
+                    print(f"Error converting bbox values to float: {e}")
         roi_boxes = torch.tensor(roi_boxes, dtype=torch.float32).to(device)
-
         
         # Apply RoI Pooling
         pooled_features = self.roi_pool(feature_maps, roi_boxes)
@@ -122,9 +122,8 @@ class FastRCNN(nn.Module):
         return class_logits
 
 
-
 # ===============================
-# Task 3: Loss Function
+# Loss Function
 # ===============================
 
 def compute_loss(class_logits, labels):
@@ -136,31 +135,42 @@ def compute_loss(class_logits, labels):
 
 
 # ===============================
-# Task 4: Train Function
+# Train Function
 # ===============================
 
 def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=10):
+    """
+    Trains the Fast R-CNN model.
+    
+    Args:
+        model: The model to be trained.
+        train_dataloader: DataLoader for the training dataset.
+        val_dataloader: DataLoader for the validation dataset.
+        optimizer: The optimizer for training.
+        num_epochs: Number of epochs to train.
+
+    Returns:
+        model: The trained model.
+    """
     model.train()
     for epoch in range(num_epochs):
         running_loss = 0.0
-        for images, labels, filenames, bboxes in tqdm(train_dataloader, desc=f"Training Epoch {epoch+1}/{num_epochs}"):
+        for images, labels, filenames in tqdm(train_dataloader, desc=f"Training Epoch {epoch+1}/{num_epochs}"):
             images = images.to(device)
             labels = labels.to(device)
 
-            # Prepare proposals in the required format
-            proposals = []
-            for bbox in bboxes:
-                # Convert bbox to proposal format for each image
-                proposals.append([{'bbox': bbox}])
+            optimizer.zero_grad()
 
-            # Forward pass with images and proposals
+            # Extract proposals from targets (assuming proposals are included in your dataset)
+            proposals = [target['proposals'] for target in labels]  # Assuming proposals are included in the labels
+
+            # Forward pass
             class_logits = model(images, proposals)
 
             # Compute the loss
             loss = compute_loss(class_logits, labels)
 
             # Backward pass and optimization
-            optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
@@ -174,12 +184,12 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=1
         val_accuracy = evaluate_model(model, val_dataloader)
         print(f"Epoch {epoch+1}/{num_epochs}, Validation Accuracy: {val_accuracy:.4f}")
 
+    # Return the trained model
     return model
 
 
-
 # ===============================
-# Task 5: Evaluate Function
+# Evaluate Function
 # ===============================
 
 def evaluate_model(model, dataloader):
@@ -188,17 +198,11 @@ def evaluate_model(model, dataloader):
     total_classifications = 0
 
     with torch.no_grad():
-        for images, labels, filenames, bboxes in tqdm(dataloader, desc="Evaluating"):
+        for images, labels, filenames in tqdm(dataloader, desc="Evaluating"):
             images = images.to(device)
             labels = labels.to(device)
 
-            # Prepare proposals
-            proposals = []
-            for bbox in bboxes:
-                proposals.append([{'bbox': bbox}])
-
-            # Forward pass
-            class_logits = model(images, proposals)
+            class_logits = model(images, labels)  # Pass labels as proposals for eval
             _, predicted_classes = torch.max(class_logits, 1)
 
             total_classifications += labels.size(0)
@@ -206,7 +210,6 @@ def evaluate_model(model, dataloader):
 
     classification_accuracy = correct_classifications / total_classifications if total_classifications > 0 else 0
     return classification_accuracy
-
 
 
 # ===============================
@@ -255,28 +258,17 @@ def main():
     train_size = dataset_size - val_size
     train_dataset, val_dataset = random_split(used_dataset, [train_size, val_size])
 
-    print(f'Training Samples: {len(train_dataset)}, Validation Samples: {len(val_dataset)}')
+    # Create DataLoader
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-    # Create DataLoaders
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
-
-
-    # Build the Fast R-CNN model
-    model = FastRCNN(NUM_CLASSES).to(device)
-
-    # Define Optimizer
+    # Initialize model, optimizer, and loss function
+    model = FastRCNN(num_classes=NUM_CLASSES).to(device)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-    # Train the model
-    print("\nStarting Training...\n")
+    # Train model
     model = train_model(model, train_loader, val_loader, optimizer, num_epochs=NUM_EPOCHS)
 
-    # Save the trained model
-    MODEL_SAVE_PATH = os.path.join(DATASET_DIR, 'fast_rcnn_model.pth')
-    torch.save(model.state_dict(), MODEL_SAVE_PATH)
-    print(f'\nModel saved to {MODEL_SAVE_PATH}')
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
