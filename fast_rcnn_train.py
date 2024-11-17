@@ -71,28 +71,52 @@ class FastRCNNDataset(Dataset):
 # Task 2: Fast R-CNN Model
 # ===============================
 
+from torchvision.ops import RoIPool
+
 class FastRCNN(nn.Module):
-    def __init__(self, num_classes=2):
+    def __init__(self, num_classes=2, roi_output_size=(7, 7)):
         super(FastRCNN, self).__init__()
         # Load ResNet-18 as the backbone
         self.backbone = models.resnet18(weights=ResNet18_Weights.DEFAULT)
         self.backbone = nn.Sequential(*list(self.backbone.children())[:-2])  # Excluding the last two layers
-
+        
+        # RoI Pooling
+        self.roi_pool = RoIPool(output_size=roi_output_size, spatial_scale=1/32)  # Adjust scale based on feature map reduction
+        
         # Classification head
         self.classifier = nn.Sequential(
-            nn.Linear(512 * 7 * 7, 1024),  # Size of features from ResNet-18
+            nn.Linear(512 * roi_output_size[0] * roi_output_size[1], 1024),
             nn.ReLU(),
-            nn.Linear(1024, num_classes)  # Output classes for object detection (including background)
+            nn.Linear(1024, num_classes)
         )
-
-    def forward(self, images):
+    
+    def forward(self, images, proposals):
+        # Get feature maps from the backbone
         feature_maps = self.backbone(images)
+        print(f"Feature Map Shape: {feature_maps.shape}")
 
-        pooled_features = feature_maps.view(feature_maps.size(0), -1)
-
+        # Convert proposals to the correct format (batch_index, x_min, y_min, x_max, y_max)
+        roi_boxes = []
+        for i, proposal_list in enumerate(proposals):
+            for proposal in proposal_list:
+                xmin, ymin, xmax, ymax = proposal['bbox']
+                print(f"Proposal bbox: {proposal['bbox']}")
+                roi_boxes.append([i, xmin, ymin, xmax, ymax])
+        roi_boxes = torch.tensor(roi_boxes, dtype=torch.float32).to(device)
+        
+        # Apply RoI Pooling
+        pooled_features = self.roi_pool(feature_maps, roi_boxes)
+        print(f"Pooled Feature Shape: {pooled_features.shape}")
+        
+        # Flatten pooled features for the classifier
+        pooled_features = pooled_features.view(pooled_features.size(0), -1)
+        
+        # Classification
         class_logits = self.classifier(pooled_features)
+        print(f"Class Logits Shape: {class_logits.shape}")
 
         return class_logits
+
 
 
 # ===============================
@@ -100,7 +124,9 @@ class FastRCNN(nn.Module):
 # ===============================
 
 def compute_loss(class_logits, labels):
-    # Apply cross-entropy loss
+    print("Logits Shape:", class_logits.shape)
+    print("Labels Shape:", labels.shape)
+    print("Unique Labels:", labels.unique())
     classification_loss = nn.CrossEntropyLoss()(class_logits, labels)
     return classification_loss
 
@@ -196,19 +222,6 @@ def main():
     proposals = combined_data['proposals']
     ground_truths = combined_data['ground_truths']
     print(f'Total Proposals Loaded: {len(proposals)}')
-
-    # Print the first few proposals to check their format
-    print("\nSample Proposals (First 5):")
-    for i, proposal in enumerate(proposals[:5]):
-        print(f"Proposal {i+1}:")
-        print(json.dumps(proposal, indent=4))  # Pretty print the proposal
-
-    # Print the corresponding ground truth for one of the images
-    print("\nSample Ground Truths (First 5):")
-    for i, (image_filename, gts) in enumerate(list(ground_truths.items())[:5]):
-        print(f"Image: {image_filename}")
-        for gt in gts:
-            print(json.dumps(gt, indent=4))
 
     # Define transforms
     transform = transforms.Compose([
