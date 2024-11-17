@@ -305,6 +305,7 @@ def main():
     print(f"Average Precision (AP): {average_precision:.4f}")
 
 
+
 def evaluate_detections(detections, gt_boxes, iou_threshold):
     """
     Evaluates detections using Average Precision (AP) metric.
