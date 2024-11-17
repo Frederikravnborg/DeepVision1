@@ -160,17 +160,20 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=1
     model.train()
     for epoch in range(num_epochs):
         running_loss = 0.0
-        for images, labels, filenames in tqdm(train_dataloader, desc=f"Training Epoch {epoch+1}/{num_epochs}"):
+        for images, labels, proposals in tqdm(train_dataloader, desc=f"Training Epoch {epoch+1}/{num_epochs}"):
             images = images.to(device)
             labels = labels.to(device)
+            print(f"Images: {images.shape}")
+            print(f"Labels: {labels}")
+            print(f"Proposals: {proposals}")
 
             optimizer.zero_grad()
 
-            # Extract proposals (bounding boxes) from the dataset, not from the labels
-            proposals = [proposal['bbox'] for proposal in labels]  # Each label contains proposals
-
+            # Extract bounding box proposals (from the proposal dict)
+            proposal_bboxes = [proposal['bbox'] for proposal in proposals]  # Extracting 'bbox' for each proposal
+            
             # Forward pass
-            class_logits = model(images, proposals)
+            class_logits = model(images, proposal_bboxes)  # Pass proposals (bounding boxes) to the model
 
             # Compute the loss
             loss = compute_loss(class_logits, labels)
@@ -191,6 +194,7 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=1
 
     # Return the trained model
     return model
+
 
 
 
