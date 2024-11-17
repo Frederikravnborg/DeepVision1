@@ -130,13 +130,11 @@ class FastRCNN(nn.Module):
 # ===============================
 
 def compute_loss(class_logits, bbox_deltas, labels, gt_bboxes, class_weights=None):
-    # Classification loss with class weights (if provided)
+    # Apply cross-entropy loss with class weights
     classification_loss = nn.CrossEntropyLoss(weight=class_weights)(class_logits, labels)
-    
-    # Bounding box regression loss
     bbox_regression_loss = nn.SmoothL1Loss()(bbox_deltas, gt_bboxes)
-    
     return classification_loss + bbox_regression_loss
+
 
 # Example: Calculate class weights based on class frequencies
 def compute_class_weights(labels):
