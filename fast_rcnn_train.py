@@ -98,11 +98,18 @@ class FastRCNN(nn.Module):
         # RoI Pooling
         self.roi_pool = RoIPool(output_size=roi_output_size, spatial_scale=1/32)  # Adjust scale based on feature map reduction
         
-        # Classification head
-        self.classifier = nn.Sequential(
+        # Classification head (logits for classification)
+        self.cls_head = nn.Sequential(
             nn.Linear(512 * roi_output_size[0] * roi_output_size[1], 1024),
             nn.ReLU(),
-            nn.Linear(1024, num_classes)
+            nn.Linear(1024, num_classes)  # Class logits (for classification)
+        )
+        
+        # Bounding box regression head (deltas for bounding box)
+        self.bbox_head = nn.Sequential(
+            nn.Linear(512 * roi_output_size[0] * roi_output_size[1], 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 4)  # Bbox deltas (for bounding box regression)
         )
     
     def forward(self, images, rois):
@@ -123,11 +130,15 @@ class FastRCNN(nn.Module):
         # Step 2: RoI Pooling to extract features corresponding to the bounding boxes
         pooled_features = self.roi_pool(feature_maps, rois)
 
-        # Step 3: Flatten pooled features and classify
+        # Step 3: Flatten pooled features
         pooled_features = pooled_features.view(pooled_features.size(0), -1)
-        class_logits, bbox_deltas = self.classifier(pooled_features)
+
+        # Step 4: Separate the heads for classification and bounding box regression
+        class_logits = self.cls_head(pooled_features)
+        bbox_deltas = self.bbox_head(pooled_features)
 
         return class_logits, bbox_deltas
+
 
 
 
