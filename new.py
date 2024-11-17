@@ -29,7 +29,7 @@ TRAINING_DATA_FILE = os.path.join(DATASET_DIR, 'training_data.pkl')  # Combined 
 # Training Parameters
 NUM_CLASSES = 2  # 1 object class + 1 background
 BATCH_SIZE = 32
-NUM_EPOCHS = 10
+NUM_EPOCHS = 1
 LEARNING_RATE = 0.001
 VALIDATION_SPLIT = 0.2
 RANDOM_SEED = 42
