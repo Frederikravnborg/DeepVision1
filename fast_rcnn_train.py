@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 # Paths
 DATASET_DIR = 'Potholes/'
 ANNOTATED_IMAGES_DIR = os.path.join(DATASET_DIR, 'annotated-images')
-TRAINING_DATA_FILE = os.path.join(DATASET_DIR, 'training_data_with_gt.pkl')
+TRAINING_DATA_FILE = os.path.join(DATASET_DIR, 'training_data.pkl')
 
 # Training Parameters
 NUM_CLASSES = 2  # 1 object class + 1 background
