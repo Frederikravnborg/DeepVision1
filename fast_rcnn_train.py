@@ -111,16 +111,23 @@ class FastRCNN(nn.Module):
         # proposals is a list of bounding boxes for each image in the batch
         # We need to convert them to a tensor of the shape (batch_size, num_proposals, 4)
         
-        # Assuming proposals is a list of bounding boxes for each image in the batch
         roi_boxes = []
         for i, proposal_list in enumerate(proposals):
             for proposal in proposal_list:
-                # Ensure that 'proposal' is a tuple or list of the form (xmin, ymin, xmax, ymax)
-                if isinstance(proposal, (tuple, list)) and len(proposal) == 4:
-                    xmin, ymin, xmax, ymax = proposal
-                    roi_boxes.append([i, xmin, ymin, xmax, ymax])  # Add batch index and the proposal bounding box
+                # Ensure proposal contains 'bbox' and 'label'
+                if 'bbox' in proposal:
+                    bbox = proposal['bbox']
+                    # Ensure 'bbox' contains the four expected coordinates
+                    if all(key in bbox for key in ['xmin', 'ymin', 'xmax', 'ymax']):
+                        xmin = bbox['xmin']
+                        ymin = bbox['ymin']
+                        xmax = bbox['xmax']
+                        ymax = bbox['ymax']
+                        roi_boxes.append([i, xmin, ymin, xmax, ymax])  # Add batch index and the proposal bounding box
+                    else:
+                        print(f"Skipping proposal with missing bbox coordinates: {proposal}")
                 else:
-                    print(f"Skipping invalid proposal: {proposal}")
+                    print(f"Skipping invalid proposal without bbox: {proposal}")
         
         # Convert to a tensor of shape [num_proposals, 5]
         roi_boxes = torch.tensor(roi_boxes, dtype=torch.float32).to(device)
@@ -141,6 +148,7 @@ class FastRCNN(nn.Module):
         print(f"Class Logits Shape: {class_logits.shape}")
 
         return class_logits
+
 
 
 
