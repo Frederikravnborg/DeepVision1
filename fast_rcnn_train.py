@@ -222,18 +222,24 @@ def evaluate_model(model, dataloader):
     total_classifications = 0
 
     with torch.no_grad():
-        for images, labels, filenames in tqdm(dataloader, desc="Evaluating"):
+        for images, bboxes, labels, filenames in tqdm(dataloader, desc="Evaluating"):
             images = images.to(device)
-            labels = labels.to(device)
+            bboxes = bboxes.to(device)  # Bounding boxes (RoIs)
+            labels = labels.to(device)  # Class labels (used for classification)
 
-            class_logits = model(images, labels)  # Pass labels as proposals for eval
+            # Pass images and bounding boxes (RoIs) to the model
+            class_logits, bbox_deltas = model(images, bboxes)  # RoIs should be passed here
+
+            # Get the predicted classes
             _, predicted_classes = torch.max(class_logits, 1)
 
+            # Count the correct classifications
             total_classifications += labels.size(0)
             correct_classifications += (predicted_classes == labels).sum().item()
 
     classification_accuracy = correct_classifications / total_classifications if total_classifications > 0 else 0
     return classification_accuracy
+
 
 
 # ===============================
