@@ -195,9 +195,20 @@ def main():
         combined_data = pickle.load(f)
     proposals = combined_data['proposals']
     ground_truths = combined_data['ground_truths']
-    print(proposals[1])
-    print(ground_truths[1])
     print(f'Total Proposals Loaded: {len(proposals)}')
+
+    # Print the first few proposals to check their format
+    print("\nSample Proposals (First 5):")
+    for i, proposal in enumerate(proposals[:5]):
+        print(f"Proposal {i+1}:")
+        print(json.dumps(proposal, indent=4))  # Pretty print the proposal
+
+    # Print the corresponding ground truth for one of the images
+    print("\nSample Ground Truths (First 5):")
+    for i, (image_filename, gts) in enumerate(list(ground_truths.items())[:5]):
+        print(f"Image: {image_filename}")
+        for gt in gts:
+            print(json.dumps(gt, indent=4))
 
     # Define transforms
     transform = transforms.Compose([
