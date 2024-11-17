@@ -38,10 +38,18 @@ print(f'Using device: {device}')
 # Custom Dataset for Fast R-CNN
 # ===============================
 
-class FastRCNNDataset(Dataset):
-    def __init__(self, proposals, ground_truths, image_dir, transform=None):
+class ProposalDataset(Dataset):
+    """
+    Custom Dataset for Object Proposals.
+    """
+    def __init__(self, proposals, image_dir, transform=None):
+        """
+        Args:
+            proposals (list): List of proposal dictionaries, each containing 'bbox' and 'label'.
+            image_dir (str): Directory with all the images.
+            transform (callable, optional): Optional transform to be applied on a sample.
+        """
         self.proposals = proposals
-        self.ground_truths = ground_truths
         self.image_dir = image_dir
         self.transform = transform
 
@@ -49,24 +57,24 @@ class FastRCNNDataset(Dataset):
         return len(self.proposals)
 
     def __getitem__(self, idx):
+        # Extract the proposal (bounding box and label)
         proposal = self.proposals[idx]
-        image_filename = proposal['image_filename']
+        
+        bbox = proposal['bbox']  # {'xmin', 'ymin', 'xmax', 'ymax'}
         label = proposal['label']
-
+        image_filename = proposal['image_filename']
+        
         # Load the image
         image_path = os.path.join(self.image_dir, image_filename)
         image = Image.open(image_path).convert('RGB')
 
-        # Apply transforms
+        # Apply transformations (resize, normalization, etc.) to the whole image
         if self.transform:
             image = self.transform(image)
 
-        # Debugging: Print the proposal and check the bbox structure
-        print(f"Proposal {idx}: {proposal}")
-        print(f"Bounding Box: {proposal['bbox']}")  # This should print the bbox correctly
+        # Return the whole image along with the bounding box and label
+        return image, bbox, label
 
-        # Return image, label, and proposal
-        return image, label, proposal
 
 
 
@@ -92,52 +100,29 @@ class FastRCNN(nn.Module):
             nn.Linear(1024, num_classes)
         )
     
-    def forward(self, images, proposals):
+    def forward(self, images, rois):
         """
         Forward pass of the Fast R-CNN model.
         
         Args:
-            images: The input images (batch).
-            proposals: The proposals for object detection, where each proposal contains a bounding box.
-            
+            images: The input images (entire images, not cropped).
+            rois: The bounding boxes (Regions of Interest) for each image.
+        
         Returns:
-            class_logits: The classification logits for each proposal.
+            class_logits: The classification logits for each region.
+            bbox_deltas: The predicted bounding box refinements.
         """
-        # Get feature maps from the backbone
+        # Step 1: Feature extraction with backbone (e.g., ResNet)
         feature_maps = self.backbone(images)
-        print(f"Feature Map Shape: {feature_maps.shape}")
-        
-        # Prepare RoI Boxes (already pre-processed in train_model)
-        roi_boxes = []
-        for i, proposal_list in enumerate(proposals):
-            for proposal in proposal_list:
-                xmin, ymin, xmax, ymax = proposal  # Each proposal is already a tuple (xmin, ymin, xmax, ymax)
-                roi_boxes.append([i, xmin, ymin, xmax, ymax])  # Add batch index and the proposal bounding box
 
-        # Convert to a tensor of shape [num_proposals, 5]
-        roi_boxes = torch.tensor(roi_boxes, dtype=torch.float32).to(device)
-        
-        # Ensure the shape is correct for ROI pooling: [K, 5] where K is the number of proposals
-        print(f"RoI Boxes Shape: {roi_boxes.shape}")
-        assert roi_boxes.ndimension() == 2 and roi_boxes.size(1) == 5, f"Expected roi_boxes of shape [K, 5], got {roi_boxes.shape}"
-        
-        # Apply RoI Pooling
-        pooled_features = self.roi_pool(feature_maps, roi_boxes)
-        print(f"Pooled Feature Shape: {pooled_features.shape}")
-        
-        # Flatten pooled features for the classifier
+        # Step 2: RoI Pooling to extract features corresponding to the bounding boxes
+        pooled_features = self.roi_pool(feature_maps, rois)
+
+        # Step 3: Flatten pooled features and classify
         pooled_features = pooled_features.view(pooled_features.size(0), -1)
-        
-        # Classification
-        class_logits = self.classifier(pooled_features)
-        print(f"Class Logits Shape: {class_logits.shape}")
+        class_logits, bbox_deltas = self.classifier(pooled_features)
 
-        return class_logits
-
-
-
-
-
+        return class_logits, bbox_deltas
 
 
 
@@ -162,48 +147,22 @@ def compute_loss(class_logits, labels):
 # ===============================
 
 def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=10):
-    """
-    Trains the Fast R-CNN model.
-    
-    Args:
-        model: The model to be trained.
-        train_dataloader: DataLoader for the training dataset.
-        val_dataloader: DataLoader for the validation dataset.
-        optimizer: The optimizer for training.
-        num_epochs: Number of epochs to train.
-
-    Returns:
-        model: The trained model.
-    """
     model.train()
     for epoch in range(num_epochs):
         running_loss = 0.0
-        for images, labels, proposals in tqdm(train_dataloader, desc=f"Training Epoch {epoch+1}/{num_epochs}"):
+        for images, bboxes, labels in tqdm(train_dataloader, desc=f"Training Epoch {epoch+1}/{num_epochs}"):
 
-            # Extract bounding boxes from the proposals
-            bbox_xmin = proposals['bbox']['xmin'].tolist()  # Convert tensor to list
-            bbox_ymin = proposals['bbox']['ymin'].tolist()  # Convert tensor to list
-            bbox_xmax = proposals['bbox']['xmax'].tolist()  # Convert tensor to list
-            bbox_ymax = proposals['bbox']['ymax'].tolist()  # Convert tensor to list
-
-            # Debugging: Check the first proposal and bounding box values
-            print(f"First Proposal: {proposals['image_filename'][0]}")
-            print(f"Bounding Box xmin: {bbox_xmin[0]}, ymin: {bbox_ymin[0]}, xmax: {bbox_xmax[0]}, ymax: {bbox_ymax[0]}")
-
-            # Convert bbox values into the format that Fast R-CNN expects
-            proposal_bboxes = list(zip(bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax))  # List of bounding boxes
-
-            # Prepare the inputs for the model
             images = images.to(device)
+            bboxes = bboxes.to(device)
             labels = labels.to(device)
 
             optimizer.zero_grad()
 
-            # Forward pass
-            class_logits = model(images, proposal_bboxes)  # Pass proposals (bounding boxes) to the model
+            # Forward pass: images and bounding boxes (RoIs)
+            class_logits, bbox_deltas = model(images, bboxes)
 
-            # Compute the loss
-            loss = compute_loss(class_logits, labels)
+            # Compute loss (classification loss + bounding box regression loss)
+            loss = compute_loss(class_logits, bbox_deltas, labels, bboxes)
 
             # Backward pass and optimization
             loss.backward()
@@ -211,19 +170,13 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=1
 
             running_loss += loss.item()
 
-        # Print average loss for the current epoch
+        # Print average loss for the epoch
         avg_loss = running_loss / len(train_dataloader)
         print(f"Epoch {epoch+1}/{num_epochs}, Loss: {avg_loss:.4f}")
 
-        # Evaluate model on validation set after each epoch
+        # Evaluate model on validation set
         val_accuracy = evaluate_model(model, val_dataloader)
         print(f"Epoch {epoch+1}/{num_epochs}, Validation Accuracy: {val_accuracy:.4f}")
-
-    # Return the trained model
-    return model
-
-
-
 
 
 
