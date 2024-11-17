@@ -51,7 +51,7 @@ class FastRCNNDataset(Dataset):
     def __getitem__(self, idx):
         proposal = self.proposals[idx]
         image_filename = proposal['image_filename']
-        label = proposal['label']
+        label = proposal['label']  # Assuming labels are the class labels
 
         # Load the image
         image_path = os.path.join(self.image_dir, image_filename)
@@ -61,7 +61,8 @@ class FastRCNNDataset(Dataset):
         if self.transform:
             image = self.transform(image)
 
-        return image, label, image_filename
+        return image, label, proposal  # Return the image, label, and the full proposal (including bbox)
+
 
 
 # ===============================
