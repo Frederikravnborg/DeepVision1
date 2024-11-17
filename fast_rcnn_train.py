@@ -93,27 +93,32 @@ class FastRCNN(nn.Module):
         )
     
     def forward(self, images, proposals):
+        """
+        Forward pass of the Fast R-CNN model.
+        
+        Args:
+            images: The input images (batch).
+            proposals: The proposals for object detection, where each proposal contains a bounding box.
+            
+        Returns:
+            class_logits: The classification logits for each proposal.
+        """
         # Get feature maps from the backbone
         feature_maps = self.backbone(images)
         print(f"Feature Map Shape: {feature_maps.shape}")
-
-        # Convert proposals to the correct format (batch_index, x_min, y_min, x_max, y_max)
+        
+        # Now, proposals already contain bounding boxes in the correct format
+        # proposals is a list of tuples (xmin, ymin, xmax, ymax) per image
+        # We need to convert them to a tensor of the shape (batch_size, num_proposals, 4)
+        
+        # Assuming proposals is a list of bounding boxes for each image in the batch
         roi_boxes = []
         for i, proposal_list in enumerate(proposals):
             for proposal in proposal_list:
-                bbox = proposal['bbox']
-                # Convert bbox values to float
-                try:
-                    xmin = float(bbox['xmin'])
-                    ymin = float(bbox['ymin'])
-                    xmax = float(bbox['xmax'])
-                    ymax = float(bbox['ymax'])
-                    roi_boxes.append([i, xmin, ymin, xmax, ymax])
-                except KeyError as e:
-                    print(f"Missing key in bbox: {e}")
-                except ValueError as e:
-                    print(f"Error converting bbox values to float: {e}")
+                roi_boxes.append([i, *proposal])  # Add batch index and the proposal bounding box
+        
         roi_boxes = torch.tensor(roi_boxes, dtype=torch.float32).to(device)
+        print(f"RoI Boxes Shape: {roi_boxes.shape}")
         
         # Apply RoI Pooling
         pooled_features = self.roi_pool(feature_maps, roi_boxes)
@@ -127,6 +132,7 @@ class FastRCNN(nn.Module):
         print(f"Class Logits Shape: {class_logits.shape}")
 
         return class_logits
+
 
 
 # ===============================
@@ -149,7 +155,7 @@ def compute_loss(class_logits, labels):
 # Train Function
 # ===============================
 
-def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=NUM_EPOCHS):
+def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=10):
     """
     Trains the Fast R-CNN model.
     
@@ -167,21 +173,27 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=N
     for epoch in range(num_epochs):
         running_loss = 0.0
         for images, labels, proposals in tqdm(train_dataloader, desc=f"Training Epoch {epoch+1}/{num_epochs}"):
+
+            # Extract bounding boxes from the proposals
+            # Note: proposals is a dictionary, and we need to access the bbox and label from it
+            image_filenames = proposals['image_filename']  # List of image filenames
+            bbox_xmin = proposals['bbox']['xmin'].tolist()  # Convert tensor to list
+            bbox_ymin = proposals['bbox']['ymin'].tolist()  # Convert tensor to list
+            bbox_xmax = proposals['bbox']['xmax'].tolist()  # Convert tensor to list
+            bbox_ymax = proposals['bbox']['ymax'].tolist()  # Convert tensor to list
+
+            # Debugging: Check the first proposal and bounding box values
+            print(f"First Proposal: {proposals['image_filename'][0]}")
+            print(f"Bounding Box xmin: {bbox_xmin[0]}, ymin: {bbox_ymin[0]}, xmax: {bbox_xmax[0]}, ymax: {bbox_ymax[0]}")
+
+            # Convert bbox values into the format that Fast R-CNN expects
+            proposal_bboxes = list(zip(bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax))  # List of bounding boxes
+
+            # Prepare the inputs for the model
             images = images.to(device)
             labels = labels.to(device)
 
             optimizer.zero_grad()
-
-            # Debugging: Verify the proposals format
-            print(f"Proposals in batch: {proposals}")  # This should print the proposals correctly
-            print(f"First Proposal: {proposals[0]}")  # Print the first proposal to check its structure
-            
-            # Extract bounding box proposals (from the proposal dict)
-            try:
-                proposal_bboxes = [proposal['bbox'] for proposal in proposals]  # Extracting 'bbox' for each proposal
-            except Exception as e:
-                print(f"Error extracting bbox: {e}")
-                continue  # Skip the batch if there is an error
 
             # Forward pass
             class_logits = model(images, proposal_bboxes)  # Pass proposals (bounding boxes) to the model
@@ -205,6 +217,7 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=N
 
     # Return the trained model
     return model
+
 
 
 
