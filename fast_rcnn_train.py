@@ -45,7 +45,7 @@ class FastRCNNDataset(Dataset):
     def __init__(self, proposals, image_dir, transform=None):
         """
         Args:
-            proposals (list): List of proposal dictionaries, each containing 'bbox' and 'label'.
+            proposals (list): List of dictionaries, each containing 'bbox' (proposal bounding box) and 'label' for each proposal.
             image_dir (str): Directory with all the images.
             transform (callable, optional): Optional transform to be applied on a sample.
         """
@@ -57,26 +57,24 @@ class FastRCNNDataset(Dataset):
         return len(self.proposals)
 
     def __getitem__(self, idx):
-        # Extract the proposal (bounding box and label)
+        # Get the proposal for this sample
         proposal = self.proposals[idx]
         
-        bbox = proposal['bbox']  # {'xmin', 'ymin', 'xmax', 'ymax'}
-        label = proposal['label']
+        bbox = proposal['bbox']  # Proposal bounding box
+        label = proposal['label']  # Proposal label
+        
         image_filename = proposal['image_filename']
         
         # Load the image
         image_path = os.path.join(self.image_dir, image_filename)
         image = Image.open(image_path).convert('RGB')
 
-        # Apply transformations (resize, normalization, etc.) to the whole image
+        # Apply transformations (resize, normalization, etc.) to the image
         if self.transform:
             image = self.transform(image)
 
-        # Return the whole image along with the bounding box and label
+        # Return the image, proposal bbox, and proposal label
         return image, bbox, label
-
-
-
 
 
 # ===============================
@@ -130,12 +128,29 @@ class FastRCNN(nn.Module):
 # Loss Function
 # ===============================
 
-def compute_loss(class_logits, labels):
-    print("Logits Shape:", class_logits.shape)
-    print("Labels Shape:", labels.shape)
-    print("Unique Labels:", labels.unique())
-    classification_loss = nn.CrossEntropyLoss()(class_logits, labels)
-    return classification_loss
+def compute_loss(class_logits, bbox_deltas, class_labels, proposal_bboxes):
+    """
+    Compute the classification and bounding box regression loss.
+    
+    Args:
+        class_logits: Logits from the model for classification.
+        bbox_deltas: Predicted bounding box deltas (refinements).
+        class_labels: Ground truth class labels (for classification).
+        proposal_bboxes: Proposal bounding boxes (for regression).
+        
+    Returns:
+        total_loss: Combined classification and bounding box regression loss.
+    """
+    # Classification loss
+    classification_loss = nn.CrossEntropyLoss()(class_logits, class_labels)
+
+    # Bounding box regression loss (Smooth L1 Loss)
+    bbox_regression_loss = nn.SmoothL1Loss()(bbox_deltas, proposal_bboxes)
+
+    # Total loss (sum of classification and regression loss)
+    total_loss = classification_loss + bbox_regression_loss
+    return total_loss
+
 
 
 # ===============================
@@ -153,8 +168,8 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=1
         for images, bboxes, labels in tqdm(train_dataloader, desc=f"Training Epoch {epoch+1}/{num_epochs}"):
 
             images = images.to(device)
-            bboxes = bboxes.to(device)
-            labels = labels.to(device)
+            bboxes = bboxes.to(device)  # Proposal bounding boxes
+            labels = labels.to(device)  # Proposal labels
 
             optimizer.zero_grad()
 
@@ -177,6 +192,8 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=1
         # Evaluate model on validation set
         val_accuracy = evaluate_model(model, val_dataloader)
         print(f"Epoch {epoch+1}/{num_epochs}, Validation Accuracy: {val_accuracy:.4f}")
+
+
 
 
 
@@ -218,7 +235,6 @@ def main():
     with open(TRAINING_DATA_FILE, 'rb') as f:
         combined_data = pickle.load(f)
     proposals = combined_data['proposals']
-    ground_truths = combined_data['ground_truths']
     print(f'Total Proposals Loaded: {len(proposals)}')
 
     # Define transforms
@@ -230,7 +246,7 @@ def main():
     ])
 
     # Create the full dataset using FastRCNNDataset
-    full_dataset = FastRCNNDataset(proposals, ground_truths, ANNOTATED_IMAGES_DIR, transform=transform)
+    full_dataset = FastRCNNDataset(proposals, ANNOTATED_IMAGES_DIR, transform=transform)
 
     # Use full dataset or reduced dataset based on a flag
     if USE_FULL_DATA:
