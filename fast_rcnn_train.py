@@ -51,7 +51,7 @@ class FastRCNNDataset(Dataset):
     def __getitem__(self, idx):
         proposal = self.proposals[idx]
         image_filename = proposal['image_filename']
-        label = proposal['label']  # Assuming labels are the class labels
+        label = proposal['label']
 
         # Load the image
         image_path = os.path.join(self.image_dir, image_filename)
@@ -61,7 +61,13 @@ class FastRCNNDataset(Dataset):
         if self.transform:
             image = self.transform(image)
 
-        return image, label, proposal  # Return the image, label, and the full proposal (including bbox)
+        # Debugging: Print the proposal and check the bbox structure
+        print(f"Proposal {idx}: {proposal}")
+        print(f"Bounding Box: {proposal['bbox']}")  # This should print the bbox correctly
+
+        # Return image, label, and proposal
+        return image, label, proposal
+
 
 
 
@@ -143,7 +149,7 @@ def compute_loss(class_logits, labels):
 # Train Function
 # ===============================
 
-def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=10):
+def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=NUM_EPOCHS):
     """
     Trains the Fast R-CNN model.
     
@@ -163,15 +169,20 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=1
         for images, labels, proposals in tqdm(train_dataloader, desc=f"Training Epoch {epoch+1}/{num_epochs}"):
             images = images.to(device)
             labels = labels.to(device)
-            print(f"Images: {images.shape}")
-            print(f"Labels: {labels}")
-            print(f"Proposals: {proposals}")
 
             optimizer.zero_grad()
 
-            # Extract bounding box proposals (from the proposal dict)
-            proposal_bboxes = [proposal['bbox'] for proposal in proposals]  # Extracting 'bbox' for each proposal
+            # Debugging: Verify the proposals format
+            print(f"Proposals in batch: {proposals}")  # This should print the proposals correctly
+            print(f"First Proposal: {proposals[0]}")  # Print the first proposal to check its structure
             
+            # Extract bounding box proposals (from the proposal dict)
+            try:
+                proposal_bboxes = [proposal['bbox'] for proposal in proposals]  # Extracting 'bbox' for each proposal
+            except Exception as e:
+                print(f"Error extracting bbox: {e}")
+                continue  # Skip the batch if there is an error
+
             # Forward pass
             class_logits = model(images, proposal_bboxes)  # Pass proposals (bounding boxes) to the model
 
@@ -194,6 +205,7 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=1
 
     # Return the trained model
     return model
+
 
 
 
