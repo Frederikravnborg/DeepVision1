@@ -38,7 +38,7 @@ print(f'Using device: {device}')
 # Custom Dataset for Fast R-CNN
 # ===============================
 
-class ProposalDataset(Dataset):
+class FastRCNNDataset(Dataset):
     """
     Custom Dataset for Object Proposals.
     """
