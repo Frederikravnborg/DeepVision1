@@ -108,14 +108,19 @@ class FastRCNN(nn.Module):
         print(f"Feature Map Shape: {feature_maps.shape}")
         
         # Now, proposals already contain bounding boxes in the correct format
-        # proposals is a list of tuples (xmin, ymin, xmax, ymax) per image
+        # proposals is a list of bounding boxes for each image in the batch
         # We need to convert them to a tensor of the shape (batch_size, num_proposals, 4)
         
         # Assuming proposals is a list of bounding boxes for each image in the batch
         roi_boxes = []
         for i, proposal_list in enumerate(proposals):
             for proposal in proposal_list:
-                roi_boxes.append([i, *proposal])  # Add batch index and the proposal bounding box
+                # Ensure that 'proposal' is a tuple or list of the form (xmin, ymin, xmax, ymax)
+                if isinstance(proposal, (tuple, list)) and len(proposal) == 4:
+                    xmin, ymin, xmax, ymax = proposal
+                    roi_boxes.append([i, xmin, ymin, xmax, ymax])  # Add batch index and the proposal bounding box
+                else:
+                    print(f"Skipping invalid proposal: {proposal}")
         
         roi_boxes = torch.tensor(roi_boxes, dtype=torch.float32).to(device)
         print(f"RoI Boxes Shape: {roi_boxes.shape}")
@@ -132,6 +137,7 @@ class FastRCNN(nn.Module):
         print(f"Class Logits Shape: {class_logits.shape}")
 
         return class_logits
+
 
 
 
