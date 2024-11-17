@@ -107,28 +107,13 @@ class FastRCNN(nn.Module):
         feature_maps = self.backbone(images)
         print(f"Feature Map Shape: {feature_maps.shape}")
         
-        # Now, proposals already contain bounding boxes in the correct format
-        # proposals is a list of bounding boxes for each image in the batch
-        # We need to convert them to a tensor of the shape (batch_size, num_proposals, 4)
-        
+        # Prepare RoI Boxes (already pre-processed in train_model)
         roi_boxes = []
         for i, proposal_list in enumerate(proposals):
             for proposal in proposal_list:
-                # Ensure proposal contains 'bbox' and 'label'
-                if 'bbox' in proposal:
-                    bbox = proposal['bbox']
-                    # Ensure 'bbox' contains the four expected coordinates
-                    if all(key in bbox for key in ['xmin', 'ymin', 'xmax', 'ymax']):
-                        xmin = bbox['xmin']
-                        ymin = bbox['ymin']
-                        xmax = bbox['xmax']
-                        ymax = bbox['ymax']
-                        roi_boxes.append([i, xmin, ymin, xmax, ymax])  # Add batch index and the proposal bounding box
-                    else:
-                        print(f"Skipping proposal with missing bbox coordinates: {proposal}")
-                else:
-                    print(f"Skipping invalid proposal without bbox: {proposal}")
-        
+                xmin, ymin, xmax, ymax = proposal  # Each proposal is already a tuple (xmin, ymin, xmax, ymax)
+                roi_boxes.append([i, xmin, ymin, xmax, ymax])  # Add batch index and the proposal bounding box
+
         # Convert to a tensor of shape [num_proposals, 5]
         roi_boxes = torch.tensor(roi_boxes, dtype=torch.float32).to(device)
         
@@ -148,6 +133,7 @@ class FastRCNN(nn.Module):
         print(f"Class Logits Shape: {class_logits.shape}")
 
         return class_logits
+
 
 
 
@@ -195,8 +181,6 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=1
         for images, labels, proposals in tqdm(train_dataloader, desc=f"Training Epoch {epoch+1}/{num_epochs}"):
 
             # Extract bounding boxes from the proposals
-            # Note: proposals is a dictionary, and we need to access the bbox and label from it
-            image_filenames = proposals['image_filename']  # List of image filenames
             bbox_xmin = proposals['bbox']['xmin'].tolist()  # Convert tensor to list
             bbox_ymin = proposals['bbox']['ymin'].tolist()  # Convert tensor to list
             bbox_xmax = proposals['bbox']['xmax'].tolist()  # Convert tensor to list
