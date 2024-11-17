@@ -57,28 +57,27 @@ class FastRCNNDataset(Dataset):
         return len(self.proposals)
 
     def __getitem__(self, idx):
-        # Get the proposal for this sample
+        # Extract the proposal (bounding box and label)
         proposal = self.proposals[idx]
         
-        # Get the bounding box and label
-        bbox = proposal['bbox']  # Proposal bounding box (should be a dictionary)
-        label = proposal['label']  # Proposal label
-        
-        # Convert bbox dict to a tensor
-        bbox_tensor = torch.tensor([bbox['xmin'], bbox['ymin'], bbox['xmax'], bbox['ymax']], dtype=torch.float32)
-
+        bbox = proposal['bbox']  # {'xmin', 'ymin', 'xmax', 'ymax'}
+        label = proposal['label']
         image_filename = proposal['image_filename']
         
         # Load the image
         image_path = os.path.join(self.image_dir, image_filename)
         image = Image.open(image_path).convert('RGB')
 
-        # Apply transformations (resize, normalization, etc.) to the image
+        # Apply transformations (resize, normalization, etc.) to the whole image
         if self.transform:
             image = self.transform(image)
 
-        # Return the image, proposal bbox tensor, and proposal label
-        return image, bbox_tensor, label
+        # Convert bbox to tensor with batch_id (index of image in batch)
+        bbox = torch.tensor(bbox, dtype=torch.float32)  # bbox = [xmin, ymin, xmax, ymax]
+        
+        # Return the whole image along with the bounding box and label
+        return image, bbox, label
+
 
 
 # ===============================
@@ -167,13 +166,18 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=1
         for images, bboxes, labels in tqdm(train_dataloader, desc=f"Training Epoch {epoch+1}/{num_epochs}"):
 
             images = images.to(device)
-            bboxes = bboxes.to(device)  # Proposal bounding boxes (now tensor)
-            labels = labels.to(device)  # Proposal labels
+            bboxes = bboxes.to(device)
+            labels = labels.to(device)
+
+            # Add batch indices to bboxes to create rois
+            batch_size = images.size(0)
+            batch_indices = torch.arange(batch_size).to(device).view(-1, 1)  # Create batch indices for each image
+            rois = torch.cat((batch_indices, bboxes), dim=1)  # Concatenate batch indices with bboxes
 
             optimizer.zero_grad()
 
             # Forward pass: images and bounding boxes (RoIs)
-            class_logits, bbox_deltas = model(images, bboxes)
+            class_logits, bbox_deltas = model(images, rois)
 
             # Compute loss (classification loss + bounding box regression loss)
             loss = compute_loss(class_logits, bbox_deltas, labels, bboxes)
@@ -191,10 +195,6 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=1
         # Evaluate model on validation set
         val_accuracy = evaluate_model(model, val_dataloader)
         print(f"Epoch {epoch+1}/{num_epochs}, Validation Accuracy: {val_accuracy:.4f}")
-
-
-
-
 
 
 # ===============================
