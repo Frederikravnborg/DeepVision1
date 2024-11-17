@@ -136,18 +136,24 @@ def compute_loss(class_logits, bbox_deltas, labels, gt_bboxes, class_weights=Non
     return classification_loss + bbox_regression_loss
 
 
+
 # Example: Calculate class weights based on class frequencies
 def compute_class_weights(labels):
     # Get the frequency of each class (0 for background, 1 for object)
     class_counts = torch.bincount(labels)
-    
+
     # Total number of samples
     total_samples = labels.size(0)
-    
+
+    # Ensure the class_counts tensor has NUM_CLASSES elements (including background)
+    if len(class_counts) < NUM_CLASSES:
+        class_counts = torch.cat([class_counts, torch.zeros(NUM_CLASSES - len(class_counts))])
+
     # Inverse frequency as weights: higher weight for less frequent classes
-    class_weights = total_samples / (len(class_counts) * class_counts.float())
-    
+    class_weights = total_samples / (NUM_CLASSES * class_counts.float())
+
     return class_weights
+
 
 
 # ===============================
