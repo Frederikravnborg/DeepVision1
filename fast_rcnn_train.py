@@ -9,14 +9,10 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import models, transforms
-from torchvision.ops import roi_pool
+from torchvision.models import ResNet18_Weights
 from PIL import Image
 import numpy as np
-import cv2
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-from torchvision.models import ResNet18_Weights
-from torchvision import models
 
 # ===============================
 # Configuration and Parameters
@@ -58,7 +54,6 @@ class FastRCNNDataset(Dataset):
     def __getitem__(self, idx):
         proposal = self.proposals[idx]
         image_filename = proposal['image_filename']
-        bbox = proposal['bbox']
         label = proposal['label']
 
         # Load the image
@@ -69,10 +64,7 @@ class FastRCNNDataset(Dataset):
         if self.transform:
             image = self.transform(image)
 
-        # Convert bounding box to tensor
-        bbox_tensor = torch.tensor([bbox['xmin'], bbox['ymin'], bbox['xmax'], bbox['ymax']], dtype=torch.float32)
-
-        return image, bbox_tensor, label, image_filename
+        return image, label, image_filename
 
 
 # ===============================
@@ -82,12 +74,9 @@ class FastRCNNDataset(Dataset):
 class FastRCNN(nn.Module):
     def __init__(self, num_classes=2):
         super(FastRCNN, self).__init__()
-        # Load ResNet-18 as the backbone, excluding the last two layers
+        # Load ResNet-18 as the backbone
         self.backbone = models.resnet18(weights=ResNet18_Weights.DEFAULT)
         self.backbone = nn.Sequential(*list(self.backbone.children())[:-2])  # Excluding the last two layers
-
-        # RoI Pooling layer
-        self.roi_pool = roi_pool
 
         # Classification head
         self.classifier = nn.Sequential(
@@ -96,77 +85,39 @@ class FastRCNN(nn.Module):
             nn.Dropout(0.5),
             nn.Linear(1024, num_classes)  # Output classes for object detection (including background)
         )
-        
-        # Bounding box regression head
-        self.regressor = nn.Sequential(
-            nn.Linear(512 * 7 * 7, 1024),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(1024, 4)  # Predicting the bounding box deltas
-        )
 
-    def forward(self, images, rois):
+    def forward(self, images):
         feature_maps = self.backbone(images)
-        
-        # RoI Pooling
-        feature_map_height, feature_map_width = feature_maps.shape[2:]
-        rois[:, 1:] = rois[:, 1:] * torch.tensor(
-            [feature_map_width, feature_map_height, feature_map_width, feature_map_height],
-            device=rois.device
-        )
 
-        pooled_features = self.roi_pool(feature_maps, rois, output_size=(7, 7))
-        pooled_features = pooled_features.view(pooled_features.size(0), -1)
+        pooled_features = feature_maps.view(feature_maps.size(0), -1)
 
         class_logits = self.classifier(pooled_features)
-        bbox_deltas = self.regressor(pooled_features)
 
-        return class_logits, bbox_deltas
-
+        return class_logits
 
 
 # ===============================
 # Task 3: Loss Function
 # ===============================
 
-def compute_loss(class_logits, bbox_deltas, labels, gt_bboxes, class_weights=None):
-    # Apply cross-entropy loss with class weights
-    classification_loss = nn.CrossEntropyLoss(weight=class_weights)(class_logits, labels)
-    bbox_regression_loss = nn.SmoothL1Loss()(bbox_deltas, gt_bboxes)
-    return classification_loss + bbox_regression_loss
-
-
-
-def compute_class_weights(labels):
-    # Get the frequency of each class (0 for background, 1 for object)
-    class_counts = torch.bincount(labels)
-
-    # Total number of samples
-    total_samples = labels.size(0)
-
-    # Ensure the class_counts tensor has NUM_CLASSES elements (including background)
-    if len(class_counts) < NUM_CLASSES:
-        class_counts = torch.cat([class_counts, torch.zeros(NUM_CLASSES - len(class_counts), device=labels.device)])
-
-    # Inverse frequency as weights: higher weight for less frequent classes
-    class_weights = total_samples / (NUM_CLASSES * class_counts.float())
-
-    return class_weights
-
-
+def compute_loss(class_logits, labels):
+    # Apply cross-entropy loss
+    classification_loss = nn.CrossEntropyLoss()(class_logits, labels)
+    return classification_loss
 
 
 # ===============================
 # Task 4: Train Function
 # ===============================
 
-def train_model(model, dataloader, optimizer, num_epochs=10):
+def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=10):
     """
     Trains the Fast R-CNN model.
     
     Args:
         model: The model to be trained.
-        dataloader: DataLoader for the training dataset.
+        train_dataloader: DataLoader for the training dataset.
+        val_dataloader: DataLoader for the validation dataset.
         optimizer: The optimizer for training.
         num_epochs: Number of epochs to train.
 
@@ -176,28 +127,17 @@ def train_model(model, dataloader, optimizer, num_epochs=10):
     model.train()
     for epoch in range(num_epochs):
         running_loss = 0.0
-        for images, bboxes, labels, filenames in tqdm(dataloader, desc=f"Training Epoch {epoch+1}/{num_epochs}"):
+        for images, labels, filenames in tqdm(train_dataloader, desc=f"Training Epoch {epoch+1}/{num_epochs}"):
             images = images.to(device)
             labels = labels.to(device)
-            bboxes = bboxes.to(device)
-
-            # Compute class weights for the current batch
-            class_weights = compute_class_weights(labels)
-
-            # Convert bounding boxes to RoI format
-            rois = torch.stack([
-                torch.cat([torch.tensor([i], dtype=torch.float32, device=device), bbox]) 
-                for i, bbox in enumerate(bboxes)
-            ])
 
             optimizer.zero_grad()
 
             # Forward pass
-            class_logits, bbox_deltas = model(images, rois)
+            class_logits = model(images)
 
             # Compute the loss
-            loss = compute_loss(class_logits, bbox_deltas, labels, bboxes, class_weights)
-
+            loss = compute_loss(class_logits, labels)
 
             # Backward pass and optimization
             loss.backward()
@@ -206,14 +146,20 @@ def train_model(model, dataloader, optimizer, num_epochs=10):
             running_loss += loss.item()
 
         # Print average loss for the current epoch
-        avg_loss = running_loss / len(dataloader)
+        avg_loss = running_loss / len(train_dataloader)
         print(f"Epoch {epoch+1}/{num_epochs}, Loss: {avg_loss:.4f}")
+
+        # Evaluate model on validation set after each epoch
+        val_accuracy = evaluate_model(model, val_dataloader)
+        print(f"Epoch {epoch+1}/{num_epochs}, Validation Accuracy: {val_accuracy:.4f}")
 
     # Return the trained model
     return model
 
 
-
+# ===============================
+# Task 5: Evaluate Function
+# ===============================
 
 def evaluate_model(model, dataloader):
     model.eval()
@@ -221,24 +167,17 @@ def evaluate_model(model, dataloader):
     total_classifications = 0
 
     with torch.no_grad():
-        for images, bboxes, labels, filenames in tqdm(dataloader, desc="Evaluating"):
+        for images, labels, filenames in tqdm(dataloader, desc="Evaluating"):
             images = images.to(device)
             labels = labels.to(device)
-            bboxes = bboxes.to(device)
 
-            rois = torch.stack([
-                torch.cat([torch.tensor([i], dtype=torch.float32, device=device), bbox]) 
-                for i, bbox in enumerate(bboxes)
-            ])
-            
-            class_logits, _ = model(images, rois)
+            class_logits = model(images)
             _, predicted_classes = torch.max(class_logits, 1)
 
             total_classifications += labels.size(0)
             correct_classifications += (predicted_classes == labels).sum().item()
 
     classification_accuracy = correct_classifications / total_classifications if total_classifications > 0 else 0
-    print(f'Validation Classification Accuracy: {classification_accuracy * 100:.2f}%')
     return classification_accuracy
 
 
@@ -302,11 +241,7 @@ def main():
 
     # Train the model
     print("\nStarting Training...\n")
-    model = train_model(model, train_loader, optimizer, num_epochs=NUM_EPOCHS)
-
-    # Evaluate the model
-    print("\nEvaluating Model on Validation Set...\n")
-    evaluate_model(model, val_loader)
+    model = train_model(model, train_loader, val_loader, optimizer, num_epochs=NUM_EPOCHS)
 
     # Save the trained model
     MODEL_SAVE_PATH = os.path.join(DATASET_DIR, 'fast_rcnn_model.pth')
