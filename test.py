@@ -25,7 +25,7 @@ def inspect_training_data(training_data_file):
         print(f"Total Ground Truths Loaded: {len(ground_truths)}")
 
         # Debugging the format of proposals and their bounding boxes
-        for i, proposal in enumerate(proposals[:5]):  # Print the first 5 proposals for inspection
+        for i, proposal in enumerate(proposals[:1]):  # Print the first 5 proposals for inspection
             print(f"\nProposal {i+1}:")
             print("Proposal Data:", proposal)
             print("Bounding Box (bbox):", proposal.get('bbox'))

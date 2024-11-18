@@ -11,6 +11,7 @@ from PIL import Image
 import numpy as np
 import random
 from tqdm import tqdm
+from torchvision.transforms import ToPILImage
 
 # ===============================
 # Configuration and Parameters
@@ -23,7 +24,7 @@ TRAINING_DATA_FILE = os.path.join(DATASET_DIR, 'training_data.pkl')
 # Training Parameters
 NUM_CLASSES = 2  # 1 object class + 1 background
 BATCH_SIZE = 4
-NUM_EPOCHS = 1
+NUM_EPOCHS = 3
 LEARNING_RATE = 0.001
 VALIDATION_SPLIT = 0.2
 RANDOM_SEED = 43
@@ -78,6 +79,9 @@ class FastRCNNDataset(Dataset):
         if self.transform:
             image = self.transform(image)
 
+
+        print(f"Image shape: {image.shape}, BBox: {bbox}, Label: {label}, image name: {image_filename}")
+
         # Return the whole image along with the bounding box and label
         return image, bbox, label
 
@@ -93,11 +97,13 @@ class FastRCNN(nn.Module):
         super(FastRCNN, self).__init__()
         # Load ResNet-18 as the backbone
         self.backbone = models.resnet18(weights=ResNet18_Weights.DEFAULT)
-        self.backbone = nn.Sequential(*list(self.backbone.children())[:-2])  # Exclude the last two layers
+        self.backbone = nn.Sequential(*list(self.backbone.children())[:-2])  # Excluding the last two layers
+        for param in self.backbone.parameters():
+            param.requires_grad = False
 
-        # RoI Pooling (we'll set spatial_scale dynamically in the forward pass)
-        self.roi_output_size = roi_output_size
-        self.roi_pool = RoIPool(output_size=roi_output_size, spatial_scale=1.0)  # Dummy scale; will be set dynamically
+        
+        # RoI Pooling
+        self.roi_pool = RoIPool(output_size=roi_output_size, spatial_scale=1/32)  # Adjust scale based on feature map reduction
         
         # Classification head (logits for classification)
         self.cls_head = nn.Sequential(
@@ -126,32 +132,19 @@ class FastRCNN(nn.Module):
             bbox_deltas: The predicted bounding box refinements.
         """
         # Step 1: Feature extraction with backbone (e.g., ResNet)
-        batch_size, _, original_height, original_width = images.size()
-        feature_maps = self.backbone(images)  # [batch_size, 512, H/32, W/32]
-        _, _, feature_map_height, feature_map_width = feature_maps.size()
-        
-        # Step 2: Calculate dynamic spatial scale
-        spatial_scale_h = feature_map_height / original_height
-        spatial_scale_w = feature_map_width / original_width
-        # Assuming square scaling, but you could use separate scales if aspect ratio differs
-        spatial_scale = (spatial_scale_h + spatial_scale_w) / 2.0
-        print(spatial_scale)
+        feature_maps = self.backbone(images)
 
-        # Update RoI Pooling with the new spatial scale
-        self.roi_pool.spatial_scale = spatial_scale
+        # Step 2: RoI Pooling to extract features corresponding to the bounding boxes
+        pooled_features = self.roi_pool(feature_maps, rois)
 
-        # Step 3: RoI Pooling to extract features corresponding to the bounding boxes
-        pooled_features = self.roi_pool(feature_maps, rois)  # Shape: [batch_size * num_rois, 512, 7, 7]
+        # Step 3: Flatten pooled features
+        pooled_features = pooled_features.view(pooled_features.size(0), -1)
 
-        # Step 4: Flatten pooled features
-        pooled_features = pooled_features.view(pooled_features.size(0), -1)  # Flatten to [batch_size * num_rois, 25088]
-
-        # Step 5: Separate the heads for classification and bounding box regression
+        # Step 4: Separate the heads for classification and bounding box regression
         class_logits = self.cls_head(pooled_features)
         bbox_deltas = self.bbox_head(pooled_features)
 
         return class_logits, bbox_deltas
-
 
 
 
@@ -178,9 +171,8 @@ def compute_loss(class_logits, bbox_deltas, class_labels, proposal_bboxes):
 
     # Bounding box regression loss (Smooth L1 Loss)
     bbox_regression_loss = nn.SmoothL1Loss()(bbox_deltas, proposal_bboxes)
-
-    # Total loss (sum of classification and regression loss)
-    total_loss = classification_loss + bbox_regression_loss
+    
+    total_loss = classification_loss #+ bbox_regression_loss
     return total_loss
 
 
@@ -188,7 +180,7 @@ def compute_loss(class_logits, bbox_deltas, class_labels, proposal_bboxes):
 # Train Function
 # ===============================
 
-def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=10):
+def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=NUM_EPOCHS):
     model.train()
     for epoch in range(num_epochs):
         running_loss = 0.0
@@ -214,6 +206,12 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=1
             # Backward pass and optimization
             loss.backward()
             optimizer.step()
+
+            for name, param in model.named_parameters():
+                if param.grad is not None:
+                    print(f"{name} grad mean: {param.grad.mean()}")
+                else:
+                    print(f"{name} has no gradient.")
 
             running_loss += loss.item()
 
@@ -286,9 +284,9 @@ def main():
                              std=[0.229, 0.224, 0.225])    # ImageNet stds
     ])
 
-    # Create the full dataset using FastRCNNDataset
+     # Create the full dataset using FastRCNNDataset
     full_dataset = FastRCNNDataset(proposals, ANNOTATED_IMAGES_DIR, transform=transform)
-
+    
     # Use full dataset or reduced dataset based on a flag
     if USE_FULL_DATA:
         used_dataset = full_dataset
@@ -305,6 +303,8 @@ def main():
     dataset_size = len(used_dataset)
     val_size = int(dataset_size * VALIDATION_SPLIT)
     train_size = dataset_size - val_size
+    train_size=1
+    val_size=0
     train_dataset, val_dataset = random_split(used_dataset, [train_size, val_size])
 
     # Create DataLoader
@@ -317,6 +317,28 @@ def main():
 
     # Train model
     model = train_model(model, train_loader, val_loader, optimizer, num_epochs=NUM_EPOCHS)
+
+    """
+    # Use only one sample from the full dataset for debugging
+    used_dataset = torch.utils.data.Subset(full_dataset, [1])  # Only use the first image
+
+    # Split into training and validation sets, but only use one image for both
+    dataset_size = len(used_dataset)
+    train_size = 1  # Use only one sample for training
+    val_size = 0  # No validation data
+
+    train_dataset, val_dataset = random_split(used_dataset, [train_size, val_size])
+
+    # Create DataLoader with batch_size=1 to load only one image per batch
+    train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False)
+
+    # Initialize model, optimizer, and loss function
+    model = FastRCNN(num_classes=NUM_CLASSES).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+
+    # Train model for just 1 image
+    model = train_model(model, train_loader, val_loader, optimizer, num_epochs=1) """
 
 
 if __name__ == "__main__":
