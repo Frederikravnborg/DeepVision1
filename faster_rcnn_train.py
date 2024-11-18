@@ -349,7 +349,7 @@ def train_one_epoch(model, dataloader, optimizer):
         loss_dict = model(images, targets)
         losses = sum(loss for loss in loss_dict.values())
         total_loss += losses.item()
-        
+
         print(losses)
 
         optimizer.zero_grad()
@@ -410,21 +410,13 @@ for epoch in range(NUM_EPOCHS):
     print(f"Epoch {epoch+1}/{NUM_EPOCHS}")
 
     train_loss = train_one_epoch(model, train_loader, optimizer)
-    val_loss = evaluate_on_metrics(model, val_loader)
+    val_loss = evaluate_on_metrics(model, val_loader, device=device)
     
     print(f"Training Loss: {train_loss:.4f}, Validation Loss: {val_loss:.4f}")
 
     lr_scheduler.step()
 
 print("Training complete.")
-
-# ===============================
-# Save Model
-# ===============================
-model_path = os.path.join(DATASET_DIR, "fasterrcnn_pothole_model.pth")
-torch.save(model.state_dict(), model_path)
-print(f"Model saved at {model_path}")
-
 
 # ===============================
 # Save Model
