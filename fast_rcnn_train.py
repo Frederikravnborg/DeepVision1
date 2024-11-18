@@ -80,7 +80,7 @@ class FastRCNNDataset(Dataset):
             image = self.transform(image)
 
 
-        print(f"Image shape: {image.shape}, BBox: {bbox}, Label: {label}, image name: {image_filename}")
+        #print(f"Image shape: {image.shape}, BBox: {bbox}, Label: {label}, image name: {image_filename}")
 
         # Return the whole image along with the bounding box and label
         return image, bbox, label
