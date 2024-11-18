@@ -93,10 +93,11 @@ class FastRCNN(nn.Module):
         super(FastRCNN, self).__init__()
         # Load ResNet-18 as the backbone
         self.backbone = models.resnet18(weights=ResNet18_Weights.DEFAULT)
-        self.backbone = nn.Sequential(*list(self.backbone.children())[:-2])  # Excluding the last two layers
-        
-        # RoI Pooling
-        self.roi_pool = RoIPool(output_size=roi_output_size, spatial_scale=1/32)  # Adjust scale based on feature map reduction
+        self.backbone = nn.Sequential(*list(self.backbone.children())[:-2])  # Exclude the last two layers
+
+        # RoI Pooling (we'll set spatial_scale dynamically in the forward pass)
+        self.roi_output_size = roi_output_size
+        self.roi_pool = RoIPool(output_size=roi_output_size, spatial_scale=1.0)  # Dummy scale; will be set dynamically
         
         # Classification head (logits for classification)
         self.cls_head = nn.Sequential(
@@ -125,19 +126,32 @@ class FastRCNN(nn.Module):
             bbox_deltas: The predicted bounding box refinements.
         """
         # Step 1: Feature extraction with backbone (e.g., ResNet)
-        feature_maps = self.backbone(images)
+        batch_size, _, original_height, original_width = images.size()
+        feature_maps = self.backbone(images)  # [batch_size, 512, H/32, W/32]
+        _, _, feature_map_height, feature_map_width = feature_maps.size()
+        
+        # Step 2: Calculate dynamic spatial scale
+        spatial_scale_h = feature_map_height / original_height
+        spatial_scale_w = feature_map_width / original_width
+        # Assuming square scaling, but you could use separate scales if aspect ratio differs
+        spatial_scale = (spatial_scale_h + spatial_scale_w) / 2.0
+        print(spatial_scale)
 
-        # Step 2: RoI Pooling to extract features corresponding to the bounding boxes
-        pooled_features = self.roi_pool(feature_maps, rois)
+        # Update RoI Pooling with the new spatial scale
+        self.roi_pool.spatial_scale = spatial_scale
 
-        # Step 3: Flatten pooled features
-        pooled_features = pooled_features.view(pooled_features.size(0), -1)
+        # Step 3: RoI Pooling to extract features corresponding to the bounding boxes
+        pooled_features = self.roi_pool(feature_maps, rois)  # Shape: [batch_size * num_rois, 512, 7, 7]
 
-        # Step 4: Separate the heads for classification and bounding box regression
+        # Step 4: Flatten pooled features
+        pooled_features = pooled_features.view(pooled_features.size(0), -1)  # Flatten to [batch_size * num_rois, 25088]
+
+        # Step 5: Separate the heads for classification and bounding box regression
         class_logits = self.cls_head(pooled_features)
         bbox_deltas = self.bbox_head(pooled_features)
 
         return class_logits, bbox_deltas
+
 
 
 
