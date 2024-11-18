@@ -207,12 +207,6 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=N
             loss.backward()
             optimizer.step()
 
-            for name, param in model.named_parameters():
-                if param.grad is not None:
-                    print(f"{name} grad mean: {param.grad.mean()}")
-                else:
-                    print(f"{name} has no gradient.")
-
             running_loss += loss.item()
 
         # Print average loss for the epoch
