@@ -25,7 +25,7 @@ TRAINING_DATA_FILE = os.path.join(DATASET_DIR, 'training_data.pkl')
 NUM_CLASSES = 2  # 1 object class + 1 background
 BATCH_SIZE = 4
 NUM_EPOCHS = 10
-LEARNING_RATE = 0.001
+LEARNING_RATE = 0.01
 VALIDATION_SPLIT = 0.2
 RANDOM_SEED = 43
 
@@ -153,7 +153,7 @@ class FastRCNN(nn.Module):
 # Loss Function
 # ===============================
 
-def compute_loss(class_logits, bbox_deltas, class_labels, proposal_bboxes):
+def compute_loss(class_logits, bbox_deltas, class_labels, proposal_bboxes, image_size, alpha=1.0, beta=1.0):
     """
     Compute the classification and bounding box regression loss.
     
@@ -162,18 +162,27 @@ def compute_loss(class_logits, bbox_deltas, class_labels, proposal_bboxes):
         bbox_deltas: Predicted bounding box deltas (refinements).
         class_labels: Ground truth class labels (for classification).
         proposal_bboxes: Proposal bounding boxes (for regression).
+        image_size: The size of the image (width, height) for normalization of bbox deltas.
+        alpha: Weighting factor for the classification loss.
+        beta: Weighting factor for the bounding box regression loss.
         
     Returns:
         total_loss: Combined classification and bounding box regression loss.
     """
-    # Classification loss
+    # Classification loss (Cross Entropy Loss)
     classification_loss = nn.CrossEntropyLoss()(class_logits, class_labels)
 
-    # Bounding box regression loss (Smooth L1 Loss)
-    bbox_regression_loss = nn.SmoothL1Loss()(bbox_deltas, proposal_bboxes)
+    # Normalize bounding box deltas by image size (image_size = (width, height))
+    image_height, image_width = image_size
+    normalized_bboxes = proposal_bboxes / torch.tensor([image_width, image_height, image_width, image_height], dtype=torch.float32).to(bbox_deltas.device)
+
+    # Bounding box regression loss (Smooth L1 Loss) with normalized bounding boxes
+    bbox_regression_loss = nn.SmoothL1Loss()(bbox_deltas, normalized_bboxes)
     
-    total_loss = classification_loss #+ bbox_regression_loss
+    # Total loss: Weighted sum of classification and bounding box regression losses
+    total_loss = alpha * classification_loss + beta * bbox_regression_loss
     return total_loss
+
 
 
 # ===============================
@@ -190,6 +199,9 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=N
             bboxes = bboxes.to(device)
             labels = labels.to(device)
 
+            # Get image size (height, width) for normalization
+            image_size = (images.size(2), images.size(3))  # images: [batch_size, channels, height, width]
+
             # Add batch indices to bboxes to create rois
             batch_size = images.size(0)
             batch_indices = torch.arange(batch_size).to(device).view(-1, 1)  # Create batch indices for each image
@@ -201,7 +213,7 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, num_epochs=N
             class_logits, bbox_deltas = model(images, rois)
 
             # Compute loss (classification loss + bounding box regression loss)
-            loss = compute_loss(class_logits, bbox_deltas, labels, bboxes)
+            loss = compute_loss(class_logits, bbox_deltas, labels, bboxes, image_size)
 
             # Backward pass and optimization
             loss.backward()
