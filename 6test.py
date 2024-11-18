@@ -3,7 +3,6 @@ import json
 import pickle
 import random
 from tqdm import tqdm
-from fast_rcnn_train import FastRCNN
 
 import torch
 import torch.nn as nn
@@ -16,7 +15,6 @@ import cv2
 # For NMS and evaluation
 from torchvision.ops import nms
 from sklearn.metrics import precision_recall_curve, average_precision_score
-
 
 # For Gradcam
 from pytorch_grad_cam import GradCAM
@@ -33,7 +31,7 @@ DATASET_DIR = 'Potholes/'  # Replace with your dataset directory path
 ANNOTATED_IMAGES_DIR = os.path.join(DATASET_DIR, 'annotated-images')
 PROPOSALS_FILE = os.path.join(DATASET_DIR, 'selective_search_proposals_fast.json')
 SPLITS_FILE = os.path.join(DATASET_DIR, 'splits.json')
-MODEL_SAVE_PATH = os.path.join(DATASET_DIR, 'fast_rcnn_model.pth')
+MODEL_SAVE_PATH = os.path.join(DATASET_DIR, 'proposal_classifier_resnet18.pth')
 
 # Parameters
 NUM_CLASSES = 2  # 1 object class + 1 background
@@ -61,22 +59,6 @@ def load_model(model_path, num_classes):
     model = model.to(device)
     model.eval()
     return model
-
-def load_fast_rcnn_model(model_path, num_classes):
-    """
-    Loads the trained custom Fast R-CNN model from disk.
-    """
-    # Recreate the custom Fast R-CNN model architecture
-    model = FastRCNN(num_classes=num_classes).to(device)
-    
-    # Load the saved state_dict into the model
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    
-    # Set the model to evaluation mode
-    model.eval()
-    
-    return model
-
 
 def parse_annotation(xml_file):
     """
@@ -145,7 +127,7 @@ def apply_nms(detections, iou_threshold):
 
 def main():
     # Load the trained model
-    model = load_fast_rcnn_model(MODEL_SAVE_PATH, NUM_CLASSES)
+    model = load_model(MODEL_SAVE_PATH, NUM_CLASSES)
     print("Model loaded.")
     
     # Load splits.json to get test files
@@ -214,32 +196,19 @@ def main():
         for batch_idx in range(num_batches):
             batch_proposals = proposals[batch_idx * batch_size : (batch_idx + 1) * batch_size]
             images = []
-            rois = []
-            
             for prop in batch_proposals:
-                bbox = [prop['xmin'], prop['ymin'], prop['xmax'], prop['ymax']]
-                
-                # Collect RoIs (with image index for batching)
-                rois.append([0] + bbox)  # Assuming batch size is 1, so image index is 0
-                
-                # Crop the image according to the bbox
-                cropped_image = image.crop(bbox)
+                bbox = prop
+                cropped_image = image.crop((bbox['xmin'], bbox['ymin'], bbox['xmax'], bbox['ymax']))
                 cropped_image = transform(cropped_image)
                 images.append(cropped_image)
-            
-            # Convert lists to tensors
             inputs = torch.stack(images).to(device)
-            rois = torch.tensor(rois, dtype=torch.float32).to(device)
             
-            # Forward pass with both inputs and rois
+            # Forward pass
             with torch.no_grad():
-                class_logits, bbox_deltas = model(inputs, rois)  # Pass images and RoIs
-                print(f"Class logits: {class_logits}")  # Debugging: Logits
-                probs = nn.functional.softmax(class_logits, dim=1)
-                print(f"Probabilities: {probs}")  # Debugging: Probabilities
+                outputs = model(inputs)
+                probs = nn.functional.softmax(outputs, dim=1)
                 scores, preds = torch.max(probs, dim=1)
-                print(f"Scores: {scores}")  # Debugging: Scores
-                print(f"Predictions: {preds}")  # Debugging: Predictions
+            # Optionally visualize proposals
             
             # Collect detections
             for i in range(len(batch_proposals)):
@@ -255,12 +224,9 @@ def main():
                             ],
                             'score': score
                         })
-                        print(f"Detection added: {detections[-1]}")  # Debugging: Each detection added
         
         # Apply NMS
-        print(f"Applying NMS to {len(detections)} detections...")
         nms_detections = apply_nms(detections, IOU_THRESHOLD_NMS)
-        print(f"Number of detections after NMS: {len(nms_detections)}")  # Debugging: NMS results
         
         # Store detections and ground truths
         for det in nms_detections:
@@ -279,7 +245,6 @@ def main():
                     gt['ymax']
                 ]
             })
-        
         # After NMS, visualize detections with GradCAM
         if nms_detections:
             # Create visualizations directory if it doesn't exist
@@ -298,13 +263,12 @@ def main():
                     device,
                     output_path
                 )
+            
     
     # Evaluate detections using AP metric
     print("\nEvaluating detections...\n")
     average_precision = evaluate_detections(all_detections, all_gt_boxes, IOU_THRESHOLD_EVAL)
     print(f"Average Precision (AP): {average_precision:.4f}")
-
-
 
 def evaluate_detections(detections, gt_boxes, iou_threshold):
     """
