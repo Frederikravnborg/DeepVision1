@@ -349,6 +349,8 @@ def train_one_epoch(model, dataloader, optimizer):
         loss_dict = model(images, targets)
         losses = sum(loss for loss in loss_dict.values())
         total_loss += losses.item()
+        
+        print(losses)
 
         optimizer.zero_grad()
         losses.backward()
