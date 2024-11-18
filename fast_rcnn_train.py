@@ -3,7 +3,7 @@ import pickle
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader, random_split, Subset
 from torchvision import models, transforms
 from torchvision.models import ResNet18_Weights
 from torchvision.ops import RoIPool
@@ -248,7 +248,7 @@ def evaluate_model(model, dataloader):
             total_classifications += labels.size(0)
             correct_classifications += (predicted_classes == labels).sum().item()
 
-    classification_accuracy = correct_classifications / total_classifications if total_classifications > 0 else 0
+    classification_accuracy = correct_classifications / total_classifications
     return classification_accuracy
 
 
@@ -281,7 +281,6 @@ def main():
      # Create the full dataset using FastRCNNDataset
     full_dataset = FastRCNNDataset(proposals, ANNOTATED_IMAGES_DIR, transform=transform)
     
-    # Use full dataset or reduced dataset based on a flag
     if USE_FULL_DATA:
         used_dataset = full_dataset
         print("Using the full dataset.")
@@ -290,20 +289,24 @@ def main():
         total_samples = len(full_dataset)
         reduced_sample_size = max(1, int(total_samples * 0.05))  # Ensure at least one sample
         sampled_indices = random.sample(range(total_samples), reduced_sample_size)
-        used_dataset = torch.utils.data.Subset(full_dataset, sampled_indices)
+        used_dataset = Subset(full_dataset, sampled_indices)
         print(f'Reduced Dataset: Using 5% of data ({reduced_sample_size} samples).')
 
     # Split into training and validation sets
-    dataset_size = len(used_dataset)
+    if isinstance(used_dataset, Subset):
+        dataset_size = len(used_dataset)
+    else:
+        dataset_size = len(used_dataset)
+
     val_size = int(dataset_size * VALIDATION_SPLIT)
     train_size = dataset_size - val_size
-    train_size=1
-    val_size=0
     train_dataset, val_dataset = random_split(used_dataset, [train_size, val_size])
 
-    # Create DataLoader
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+    print(f'Training Samples: {len(train_dataset)}, Validation Samples: {len(val_dataset)}')
+
+    # Create DataLoaders
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
 
     # Initialize model, optimizer, and loss function
     model = FastRCNN(num_classes=NUM_CLASSES).to(device)
