@@ -227,8 +227,13 @@ def evaluate_model(model, dataloader):
             bboxes = bboxes.to(device)  # Bounding boxes (RoIs)
             labels = labels.to(device)  # Class labels (used for classification)
 
+            # Add batch indices to bboxes to create rois
+            batch_size = images.size(0)
+            batch_indices = torch.arange(batch_size).to(device).view(-1, 1)  # Create batch indices for each image
+            rois = torch.cat((batch_indices, bboxes), dim=1)  # Concatenate batch indices with bboxes
+
             # Pass images and bounding boxes (RoIs) to the model
-            class_logits, bbox_deltas = model(images, bboxes)  # RoIs should be passed here
+            class_logits, bbox_deltas = model(images, rois)  # RoIs should have shape [K, 5]
 
             # Get the predicted classes
             _, predicted_classes = torch.max(class_logits, 1)
@@ -239,6 +244,7 @@ def evaluate_model(model, dataloader):
 
     classification_accuracy = correct_classifications / total_classifications if total_classifications > 0 else 0
     return classification_accuracy
+
 
 
 
