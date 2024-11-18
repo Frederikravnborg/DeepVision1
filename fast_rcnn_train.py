@@ -222,7 +222,7 @@ def evaluate_model(model, dataloader):
     total_classifications = 0
 
     with torch.no_grad():
-        for images, bboxes, labels, filenames in tqdm(dataloader, desc="Evaluating"):
+        for images, bboxes, labels in tqdm(dataloader, desc="Evaluating"):
             images = images.to(device)
             bboxes = bboxes.to(device)  # Bounding boxes (RoIs)
             labels = labels.to(device)  # Class labels (used for classification)
