@@ -16,5 +16,5 @@
 # activate the virtual environment
 # NOTE: needs to have been built with the same SciPy version above!
 
-python3 faster_rcnn_train.py
+python3 faster_rcnn_train2.py
 
