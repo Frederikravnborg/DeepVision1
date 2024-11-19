@@ -1,7 +1,3 @@
-# ===============================
-# Main Training Loop
-# ===============================
-
 import os
 import xml.etree.ElementTree as ET
 import torch
@@ -14,6 +10,7 @@ from tqdm import tqdm
 import numpy as np
 import random
 from torchvision.ops import box_iou
+import json
 
 # ===============================
 # Configuration and Parameters
@@ -22,6 +19,14 @@ from torchvision.ops import box_iou
 # Paths
 DATASET_DIR = 'Potholes/'  # Replace with your dataset directory path
 ANNOTATED_IMAGES_DIR = os.path.join(DATASET_DIR, 'annotated-images')
+SPLITS_FILE = os.path.join(DATASET_DIR, 'splits.json')
+
+# Load splits.json to get test files
+with open(SPLITS_FILE, 'r') as f:
+    splits = json.load(f)
+test_files = splits.get('test', [])
+print(f"Number of test images: {len(test_files)}")
+print(test_files[0])  # Print first test file name
 
 # Parameters
 NUM_CLASSES = 2  # 1 object class + 1 background
@@ -46,7 +51,6 @@ def parse_annotation(xml_file):
     Parses a Pascal VOC XML file and extracts bounding box coordinates.
     """
     try:
-        import xml.etree.ElementTree as ET
         tree = ET.parse(xml_file)
         root = tree.getroot()
         
@@ -76,9 +80,10 @@ def parse_annotation(xml_file):
 
 
 class PotholeDataset(Dataset):
-    def __init__(self, annotations_dir, transform=None):
+    def __init__(self, annotations_dir, test_files, transform=None):
         self.annotations_dir = annotations_dir
-        self.image_files = [f for f in os.listdir(annotations_dir) if f.endswith('.jpg')]
+        # Filter image files to exclude those in test_files
+        self.image_files = [f for f in os.listdir(annotations_dir) if f.endswith('.jpg') and f not in test_files]
         self.transform = transform
 
     def __len__(self):
@@ -113,7 +118,7 @@ transform = transforms.Compose([
 ])
 
 # Create Dataset and DataLoaders
-dataset = PotholeDataset(ANNOTATED_IMAGES_DIR, transform=transform)
+dataset = PotholeDataset(ANNOTATED_IMAGES_DIR, test_files, transform=transform)
 train_size = int(TRAIN_SPLIT * len(dataset))
 val_size = len(dataset) - train_size
 
