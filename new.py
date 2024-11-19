@@ -25,6 +25,7 @@ import matplotlib.pyplot as plt
 DATASET_DIR = 'Potholes/'  # Replace with your dataset directory path
 ANNOTATED_IMAGES_DIR = os.path.join(DATASET_DIR, 'annotated-images')
 SPLITS_FILE = os.path.join(DATASET_DIR, 'splits.json')
+ANNOTATED_IMAGES_DIR = os.path.join(DATASET_DIR, 'annotated-images')
 
 
 # Load splits.json to get test files
@@ -32,4 +33,5 @@ with open(SPLITS_FILE, 'r') as f:
     splits = json.load(f)
 test_files = splits.get('test', [])
 print(f"Number of test images: {len(test_files)}")
-print(test_files[1])
+test_image_files = [os.path.splitext(f)[0] + '.jpg' for f in test_files]
+print([f for f in os.listdir(ANNOTATED_IMAGES_DIR) if f.endswith('.jpg') and f not in test_image_files])

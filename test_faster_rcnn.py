@@ -98,7 +98,13 @@ def compute_average_iou(model, dataloader, device, confidence_threshold):
     with torch.no_grad():
         for images, targets in tqdm(dataloader, desc="Computing IoU", leave=False):
             images = [img.to(device) for img in images]
-            targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+            
+            # Ensure targets are correctly moved to device
+            targets = [
+                {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in t.items()}
+                for t in targets
+            ]
+
             outputs = model(images)
 
             for idx, output in enumerate(outputs):
@@ -120,8 +126,10 @@ def compute_average_iou(model, dataloader, device, confidence_threshold):
                 total_iou += max_iou_per_gt.sum().item()
                 total_boxes += len(gt_boxes)
 
-    average_iou = total_iou / total_boxes
+    # Avoid division by zero
+    average_iou = total_iou / total_boxes if total_boxes > 0 else 0.0
     return average_iou
+
 
 
 def compute_iou_bbox(pred_bbox, gt_bbox):
@@ -228,7 +236,8 @@ if __name__ == "__main__":
     # Initialize lists to store detections and GT boxes
     detections = []
     gt_boxes = []
-
+    
+    
     # In the evaluation loop, move tensors to the device, but skip non-tensor fields (like 'image_id')
     with torch.no_grad():
         for images, targets in tqdm(val_loader, desc="Evaluating", leave=False):

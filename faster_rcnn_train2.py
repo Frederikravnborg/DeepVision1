@@ -83,7 +83,12 @@ class PotholeDataset(Dataset):
     def __init__(self, annotations_dir, test_files, transform=None):
         self.annotations_dir = annotations_dir
         # Filter image files to exclude those in test_files
-        self.image_files = [f for f in os.listdir(annotations_dir) if f.endswith('.jpg') and f not in test_files]
+        # Convert test file names to the corresponding .jpg names
+        test_image_files = [os.path.splitext(f)[0] + '.jpg' for f in test_files]
+
+        # Filter out images in test_files
+        self.image_files = [f for f in os.listdir(annotations_dir) if f.endswith('.jpg') and f not in test_image_files]
+
         self.transform = transform
 
     def __len__(self):
