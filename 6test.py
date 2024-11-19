@@ -130,11 +130,13 @@ def main():
     model = load_model(MODEL_SAVE_PATH, NUM_CLASSES)
     print("Model loaded.")
     
-    # Load splits.json to get test files
+    # Load splits.json to get test and train files
     with open(SPLITS_FILE, 'r') as f:
         splits = json.load(f)
     test_files = splits.get('test', [])
+    train_files = splits.get('train', [])
     print(f"Number of test images: {len(test_files)}")
+    print(f"Number of train images: {len(train_files)}")
     
     # Load object proposals
     with open(PROPOSALS_FILE, 'r') as f:
@@ -148,127 +150,140 @@ def main():
                              std=[0.229, 0.224, 0.225])    # ImageNet stds
     ])
     
-    # Prepare ground truth annotations
-    gt_annotations = {}
-    for xml_filename in test_files:
-        base_filename = os.path.splitext(xml_filename)[0]
-        xml_path = os.path.join(ANNOTATED_IMAGES_DIR, xml_filename)
-        gt_boxes = parse_annotation(xml_path)
-        gt_annotations[base_filename] = gt_boxes
-    
-    # Store all detections and ground truths
-    all_detections = []
-    all_gt_boxes = []
-    gradcam_count = 0
-    print("\nProcessing test images...\n")
-    for xml_filename in tqdm(test_files, desc="Test Images"):
-        base_filename = os.path.splitext(xml_filename)[0]
+    # Function to process a split (train or test)
+    def process_split(split_name, split_files):
+        print(f"\nProcessing {split_name} images...\n")
+        # Prepare ground truth annotations
+        gt_annotations = {}
+        for xml_filename in split_files:
+            base_filename = os.path.splitext(xml_filename)[0]
+            xml_path = os.path.join(ANNOTATED_IMAGES_DIR, xml_filename)
+            gt_boxes = parse_annotation(xml_path)
+            gt_annotations[base_filename] = gt_boxes
         
-        # Find the corresponding image file
-        image_filename = None
-        possible_extensions = ['.jpg', '.png', '.jpeg']
-        for ext in possible_extensions:
-            candidate_filename = base_filename + ext
-            image_path = os.path.join(ANNOTATED_IMAGES_DIR, candidate_filename)
-            if os.path.exists(image_path):
-                image_filename = candidate_filename
-                break
-        if image_filename is None:
-            print(f"No image found for {xml_filename}")
-            continue
+        # Store all detections and ground truths for this split
+        all_detections = []
+        all_gt_boxes = []
+        gradcam_count = 0
         
-        # Load the image
-        image_path = os.path.join(ANNOTATED_IMAGES_DIR, image_filename)
-        image = Image.open(image_path).convert('RGB')
-        
-        # Get proposals for this image
-        proposals = object_proposals.get(image_filename, [])
-        if not proposals:
-            print(f"No proposals found for {image_filename}")
-            continue
-        
-        detections = []
-        
-        # Process proposals in batches
-        batch_size = BATCH_SIZE
-        num_batches = len(proposals) // batch_size + int(len(proposals) % batch_size > 0)
-        
-        for batch_idx in range(num_batches):
-            batch_proposals = proposals[batch_idx * batch_size : (batch_idx + 1) * batch_size]
-            images = []
-            for prop in batch_proposals:
-                bbox = prop
-                cropped_image = image.crop((bbox['xmin'], bbox['ymin'], bbox['xmax'], bbox['ymax']))
-                cropped_image = transform(cropped_image)
-                images.append(cropped_image)
-            inputs = torch.stack(images).to(device)
+        for xml_filename in tqdm(split_files, desc=f"{split_name.capitalize()} Images"):
+            base_filename = os.path.splitext(xml_filename)[0]
             
-            # Forward pass
-            with torch.no_grad():
-                outputs = model(inputs)
-                probs = nn.functional.softmax(outputs, dim=1)
-                scores, preds = torch.max(probs, dim=1)
-            # Optionally visualize proposals
+            # Find the corresponding image file
+            image_filename = None
+            possible_extensions = ['.jpg', '.png', '.jpeg']
+            for ext in possible_extensions:
+                candidate_filename = base_filename + ext
+                image_path = os.path.join(ANNOTATED_IMAGES_DIR, candidate_filename)
+                if os.path.exists(image_path):
+                    image_filename = candidate_filename
+                    break
+            if image_filename is None:
+                print(f"No image found for {xml_filename}")
+                continue
             
-            # Collect detections
-            for i in range(len(batch_proposals)):
-                if preds[i].item() == 1:  # Assuming label 1 is the object class
-                    score = scores[i].item()
-                    if score >= CONFIDENCE_THRESHOLD:
-                        detections.append({
-                            'bbox': [
-                                batch_proposals[i]['xmin'],
-                                batch_proposals[i]['ymin'],
-                                batch_proposals[i]['xmax'],
-                                batch_proposals[i]['ymax']
-                            ],
-                            'score': score
-                        })
-        
-        # Apply NMS
-        nms_detections = apply_nms(detections, IOU_THRESHOLD_NMS)
-        
-        # Store detections and ground truths
-        for det in nms_detections:
-            all_detections.append({
-                'image_id': base_filename,
-                'bbox': det['bbox'],
-                'score': det['score']
-            })
-        for gt in gt_annotations.get(base_filename, []):
-            all_gt_boxes.append({
-                'image_id': base_filename,
-                'bbox': [
-                    gt['xmin'],
-                    gt['ymin'],
-                    gt['xmax'],
-                    gt['ymax']
-                ]
-            })
-        # After NMS, visualize detections with GradCAM
-        if nms_detections:
-            # Create visualizations directory if it doesn't exist
-            if gradcam_count < 10:
-                gradcam_count += 1
-                vis_dir = os.path.join(DATASET_DIR, 'visualizations')
-                os.makedirs(vis_dir, exist_ok=True)
+            # Load the image
+            image_path = os.path.join(ANNOTATED_IMAGES_DIR, image_filename)
+            image = Image.open(image_path).convert('RGB')
+            
+            # Get proposals for this image
+            proposals = object_proposals.get(image_filename, [])
+            if not proposals:
+                print(f"No proposals found for {image_filename}")
+                continue
+            
+            detections = []
+            
+            # Process proposals in batches
+            batch_size = BATCH_SIZE
+            num_batches = len(proposals) // batch_size + int(len(proposals) % batch_size > 0)
+            
+            for batch_idx in range(num_batches):
+                batch_proposals = proposals[batch_idx * batch_size : (batch_idx + 1) * batch_size]
+                images = []
+                for prop in batch_proposals:
+                    bbox = prop
+                    cropped_image = image.crop((bbox['xmin'], bbox['ymin'], bbox['xmax'], bbox['ymax']))
+                    cropped_image = transform(cropped_image)
+                    images.append(cropped_image)
+                if not images:
+                    continue
+                inputs = torch.stack(images).to(device)
                 
-                # Visualize all detections in a grid
-                output_path = os.path.join(vis_dir, f'{base_filename}_gradcam_all.png')
-                visualize_all_detections(
-                    image_path,
-                    nms_detections,
-                    model,
-                    transform,
-                    device,
-                    output_path
-                )
+                # Forward pass
+                with torch.no_grad():
+                    outputs = model(inputs)
+                    probs = nn.functional.softmax(outputs, dim=1)
+                    scores, preds = torch.max(probs, dim=1)
+                # Optionally visualize proposals
+                
+                # Collect detections
+                for i in range(len(batch_proposals)):
+                    if preds[i].item() == 1:  # Assuming label 1 is the object class
+                        score = scores[i].item()
+                        if score >= CONFIDENCE_THRESHOLD:
+                            detections.append({
+                                'bbox': [
+                                    batch_proposals[i]['xmin'],
+                                    batch_proposals[i]['ymin'],
+                                    batch_proposals[i]['xmax'],
+                                    batch_proposals[i]['ymax']
+                                ],
+                                'score': score
+                            })
             
+            # Apply NMS
+            nms_detections = apply_nms(detections, IOU_THRESHOLD_NMS)
+            
+            # Store detections and ground truths
+            for det in nms_detections:
+                all_detections.append({
+                    'image_id': base_filename,
+                    'bbox': det['bbox'],
+                    'score': det['score']
+                })
+            for gt in gt_annotations.get(base_filename, []):
+                all_gt_boxes.append({
+                    'image_id': base_filename,
+                    'bbox': [
+                        gt['xmin'],
+                        gt['ymin'],
+                        gt['xmax'],
+                        gt['ymax']
+                    ]
+                })
+            
+            # After NMS, visualize detections with GradCAM only for test split
+            if split_name == 'test' and nms_detections:
+                # Create visualizations directory if it doesn't exist
+                if gradcam_count < 10:
+                    gradcam_count += 1
+                    vis_dir = os.path.join(DATASET_DIR, 'visualizations')
+                    os.makedirs(vis_dir, exist_ok=True)
+                    
+                    # Visualize all detections in a grid
+                    output_path = os.path.join(vis_dir, f'{base_filename}_gradcam_all.png')
+                    visualize_all_detections(
+                        image_path,
+                        nms_detections,
+                        model,
+                        transform,
+                        device,
+                        output_path
+                    )
+        
+        return all_detections, all_gt_boxes
     
-    # Evaluate detections using AP metric
+    # Process both train and test splits
+    detections_train, gt_boxes_train = process_split('train', train_files)
+    detections_test, gt_boxes_test = process_split('test', test_files)
+    
+    # Evaluate detections using AP metric for both splits
     print("\nEvaluating detections...\n")
-    average_precision = evaluate_detections(all_detections, all_gt_boxes, IOU_THRESHOLD_EVAL)
-    print(f"Average Precision (AP): {average_precision:.4f}")
+    average_precision_train = evaluate_detections(detections_train, gt_boxes_train, IOU_THRESHOLD_EVAL)
+    average_precision_test = evaluate_detections(detections_test, gt_boxes_test, IOU_THRESHOLD_EVAL)
+    print(f"Average Precision (AP) on Train: {average_precision_train:.4f}")
+    print(f"Average Precision (AP) on Test: {average_precision_test:.4f}")
 
 def evaluate_detections(detections, gt_boxes, iou_threshold):
     """
@@ -276,37 +291,44 @@ def evaluate_detections(detections, gt_boxes, iou_threshold):
     """
     # Prepare data for evaluation
     image_ids = list(set([d['image_id'] for d in detections]))
-    gt_dict = {img_id: [] for img_id in image_ids}
+    gt_dict = {}
     for gt in gt_boxes:
         img_id = gt['image_id']
-        if img_id in gt_dict:
-            gt_dict[img_id].append(gt['bbox'])
+        if img_id not in gt_dict:
+            gt_dict[img_id] = []
+        gt_dict[img_id].append(gt['bbox'])
     
     # For all detections, compute IoU with ground truths and assign TP or FP
     y_true = []
     y_scores = []
     
-    for img_id in image_ids:
-        img_detections = [d for d in detections if d['image_id'] == img_id]
-        img_gt_boxes = gt_dict.get(img_id, [])
-        matched_gt = []
+    # Create a dictionary to keep track of matched ground truths per image
+    matched_gt = {img_id: [] for img_id in gt_dict.keys()}
+    
+    # Sort detections by score in descending order
+    detections_sorted = sorted(detections, key=lambda x: -x['score'])
+    
+    for det in detections_sorted:
+        img_id = det['image_id']
+        det_bbox = det['bbox']
+        score = det['score']
+        y_scores.append(score)
         
-        for det in sorted(img_detections, key=lambda x: -x['score']):
-            iou_max = 0.0
-            assigned_gt = None
-            for gt_bbox in img_gt_boxes:
-                if gt_bbox in matched_gt:
-                    continue
-                iou = compute_iou_bbox(det['bbox'], gt_bbox)
-                if iou > iou_max:
-                    iou_max = iou
-                    assigned_gt = gt_bbox
-            y_scores.append(det['score'])
-            if iou_max >= iou_threshold:
-                y_true.append(1)
-                matched_gt.append(assigned_gt)
+        if img_id in gt_dict:
+            gt_bboxes = gt_dict[img_id]
+            ious = [compute_iou_bbox(det_bbox, gt_bbox) for gt_bbox in gt_bboxes]
+            if len(ious) > 0:
+                max_iou = max(ious)
+                max_iou_idx = ious.index(max_iou)
+                if max_iou >= iou_threshold and max_iou_idx not in matched_gt[img_id]:
+                    y_true.append(1)  # True Positive
+                    matched_gt[img_id].append(max_iou_idx)
+                else:
+                    y_true.append(0)  # False Positive
             else:
-                y_true.append(0)
+                y_true.append(0)  # False Positive
+        else:
+            y_true.append(0)  # False Positive
     
     # Compute Average Precision
     if not y_true:
@@ -348,7 +370,7 @@ def visualize_all_detections(image_path, detections, model, transform, device, o
     cam = GradCAM(model=model, target_layers=target_layers)
     
     # Sort detections by confidence
-    sorted_dets = sorted(detections, key=lambda x: x['score'], reverse=True)[:max_dets]
+    sorted_dets = sorted(detections, key=lambda x: -x['score'])[:max_dets]
     num_dets = len(sorted_dets)
     
     if num_dets == 0:
